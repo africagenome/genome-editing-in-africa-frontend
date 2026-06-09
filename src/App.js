@@ -123,15 +123,15 @@ const App = () => {
       
       <Hero onOpenModal={navigateToAdvancedSearch} />
       
-      <div className="container">
-        <StrategicPillars />
-      </div>
-
-      <div className="container">
-        <Charts />
-      </div>
+      {/* <div className="container">
+        <StrategicPillars /> 
+      </div> */}      
 
       <InteractiveMap />
+{/* 
+      <div className="container">
+        <Charts />
+      </div> */}
 
       <SearchModal 
         isOpen={isModalOpen} 
