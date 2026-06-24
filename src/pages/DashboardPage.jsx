@@ -1,572 +1,731 @@
-import React, { useState, useEffect, useRef } from 'react';
-import Chart from 'chart.js/auto';
+// pages/DashboardPage.jsx
+
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  BarElement,
+  Title,
+  Tooltip,
+  Legend,
+  ArcElement,
+  PointElement,
+  LineElement,
+  Filler,
+  RadialLinearScale
+} from 'chart.js';
+import { Bar, Doughnut, Line } from 'react-chartjs-2';
+import apiService from '../services/apiService';
 import './DashboardPage.css';
 
+ChartJS.register(
+  CategoryScale,
+  LinearScale,
+  BarElement,
+  Title,
+  Tooltip,
+  Legend,
+  ArcElement,
+  PointElement,
+  LineElement,
+  Filler,
+  RadialLinearScale
+);
+
+const getReadinessLevel = (score) => {
+  if (score >= 0.7) return { level: 'Advanced', color: '#10B981', icon: '🚀' };
+  if (score >= 0.55) return { level: 'Intermediate', color: '#F59E0B', icon: '📈' };
+  return { level: 'Foundational', color: '#EF4444', icon: '🌱' };
+};
+
 const DashboardPage = ({ onBackClick }) => {
-  const [kpiData, setKpiData] = useState([]);
-  const [countryRanking, setCountryRanking] = useState([]);
+  const [dashboardData, setDashboardData] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [selectedYear, setSelectedYear] = useState('2026');
-  const [selectedRegion, setSelectedRegion] = useState('all');
+  const [error, setError] = useState(null);
+  const [activeTab, setActiveTab] = useState('overview');
 
-  // Chart refs
-  const sectorChartRef = useRef(null);
-  const regulatoryChartRef = useRef(null);
-  const trendChartRef = useRef(null);
-  const techChartRef = useRef(null);
-  const fundingChartRef = useRef(null);
-  const regionChartRef = useRef(null);
-  
-  const chartInstances = useRef({});
+  const fetchDashboardData = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
 
-  // KPI Data
-  const kpiDataStatic = [
-    { icon: "fas fa-flask", value: "47", label: "Active Projects", change: "+12 vs 2025", trend: "up", color: "primary" },
-    { icon: "fas fa-file-alt", value: "156", label: "Publications", change: "+34% YoY", trend: "up", color: "primary" },
-    { icon: "fas fa-gavel", value: "22", label: "Countries with GEd Guidelines", change: "+8 this year", trend: "up", color: "primary" },
-    { icon: "fas fa-users", value: "1,250+", label: "Researchers Trained", change: "Since 2022", trend: "up", color: "primary" },
-    { icon: "fas fa-dollar-sign", value: "$48M", label: "Total Investment", change: "2025-2027", trend: "up", color: "primary" },
-    { icon: "fas fa-microscope", value: "45+", label: "Research Facilities", change: "+12 new labs", trend: "up", color: "primary" }
-  ];
+      const [
+        projectsRes,
+        institutionsRes,
+        countriesRes,
+        organismsRes
+      ] = await Promise.all([
+        apiService.getProjects({ limit: 500 }),
+        apiService.getInstitutions({ limit: 500 }),
+        apiService.getCountries({ limit: 100 }),
+        apiService.getOrganisms({ limit: 500 })
+      ]);
 
-  // Chart Data
-  const sectorData = {
-    labels: ["Agriculture", "Human Health", "Environmental", "Industrial", "Capacity Building"],
-    values: [32, 9, 4, 2, 8],
-    colors: ["#5B7E96", "#B4A269", "#6C9EBF", "#D4A373", "#2C6E49"]
-  };
+      const projects = projectsRes.results || projectsRes || [];
+      const institutions = institutionsRes.results || institutionsRes || [];
+      const countries = countriesRes.results || countriesRes || [];
+      const organisms = organismsRes.results || organismsRes || [];
 
-  const regulatoryData = {
-    labels: ["Functional Framework", "Draft Guidelines", "Policy Development", "No Framework"],
-    values: [12, 8, 5, 3],
-    colors: ["#2C6E49", "#D4A373", "#5B7E96", "#8A817C"]
-  };
+      // Projects per year
+      const projectsByYear = projects.reduce((acc, p) => {
+        const year = p.start_year || p.year || 'Unknown';
+        if (year !== 'Unknown') {
+          acc[year] = (acc[year] || 0) + 1;
+        }
+        return acc;
+      }, {});
+      const sortedYears = Object.keys(projectsByYear).sort();
 
-  const trendData = {
-    labels: ["2020", "2021", "2022", "2023", "2024", "2025", "2026"],
-    projects: [5, 9, 15, 24, 35, 42, 47],
-    countries: [6, 8, 11, 15, 19, 22, 25],
-    publications: [8, 14, 25, 42, 68, 95, 156],
-    funding: [5.2, 8.5, 12.3, 18.7, 28.5, 38.2, 48.0]
-  };
+      // Projects per country
+      const projectsByCountry = projects.reduce((acc, p) => {
+        const country = p.country_name || p.country?.name || 'Unknown';
+        acc[country] = (acc[country] || 0) + 1;
+        return acc;
+      }, {});
+      const sortedCountries = Object.keys(projectsByCountry)
+        .filter(c => c !== 'Unknown')
+        .sort((a, b) => projectsByCountry[b] - projectsByCountry[a])
+        .slice(0, 12);
 
-  const techData = {
-    labels: ["CRISPR-Cas9", "TALENs", "SDN-1", "SDN-2", "Base Editing", "Prime Editing"],
-    values: [38, 6, 12, 8, 4, 2],
-    colors: ["#5B7E96", "#B4A269", "#6C9EBF", "#D4A373", "#2C6E49", "#8A817C"]
-  };
+      // Readiness per country
+      const readinessByCountry = countries.reduce((acc, c) => {
+        const name = c.name || c.country_name || 'Unknown';
+        const score = c.readiness_score || c.readiness || 0;
+        acc[name] = {
+          score: score,
+          level: getReadinessLevel(score)
+        };
+        return acc;
+      }, {});
+      const readinessSorted = Object.keys(readinessByCountry)
+        .sort((a, b) => readinessByCountry[b].score - readinessByCountry[a].score)
+        .slice(0, 12);
 
-  const fundingData = {
-    labels: ["AUDA-NEPAD", "National Govts", "Gates Foundation", "World Bank", "Private Sector", "EU/Other"],
-    values: [18, 12, 10, 5, 3, 2],
-    colors: ["#5B7E96", "#2C6E49", "#B4A269", "#6C9EBF", "#D4A373", "#8A817C"]
-  };
+      // Institutions per country
+      const institutionsByCountry = institutions.reduce((acc, inst) => {
+        const country = inst.country_name || inst.country?.name || 'Unknown';
+        acc[country] = (acc[country] || 0) + 1;
+        return acc;
+      }, {});
+      const institutionsSorted = Object.keys(institutionsByCountry)
+        .filter(c => c !== 'Unknown')
+        .sort((a, b) => institutionsByCountry[b] - institutionsByCountry[a])
+        .slice(0, 12);
 
-  const regionData = {
-    labels: ["East Africa", "West Africa", "Southern Africa", "North Africa", "Central Africa"],
-    values: [15, 12, 10, 5, 2],
-    colors: ["#5B7E96", "#B4A269", "#6C9EBF", "#D4A373", "#2C6E49"]
-  };
+      // Institutions by category
+      const institutionsByCategory = institutions.reduce((acc, inst) => {
+        const category = inst.type || inst.category || 'Research';
+        acc[category] = (acc[category] || 0) + 1;
+        return acc;
+      }, {});
 
-  const countryRankingData = [
-    { rank: 1, country: "South Africa", projects: 12, cfts: 8, pubs: 34, researchers: 210, status: "Functional", readiness: 0.85, growth: "+15%" },
-    { rank: 2, country: "Kenya", projects: 9, cfts: 6, pubs: 28, researchers: 156, status: "Functional", readiness: 0.78, growth: "+22%" },
-    { rank: 3, country: "Nigeria", projects: 7, cfts: 4, pubs: 22, researchers: 120, status: "Draft Guidelines", readiness: 0.62, growth: "+18%" },
-    { rank: 4, country: "Ghana", projects: 5, cfts: 4, pubs: 16, researchers: 85, status: "Draft Guidelines", readiness: 0.71, growth: "+25%" },
-    { rank: 5, country: "Ethiopia", projects: 4, cfts: 2, pubs: 12, researchers: 65, status: "Policy Development", readiness: 0.55, growth: "+30%" },
-    { rank: 6, country: "Uganda", projects: 3, cfts: 3, pubs: 10, researchers: 55, status: "Functional", readiness: 0.58, growth: "+12%" },
-    { rank: 7, country: "Zimbabwe", projects: 3, cfts: 2, pubs: 8, researchers: 45, status: "Functional", readiness: 0.48, growth: "+20%" },
-    { rank: 8, country: "Burkina Faso", projects: 2, cfts: 2, pubs: 6, researchers: 35, status: "Draft Guidelines", readiness: 0.45, growth: "+40%" },
-    { rank: 9, country: "Malawi", projects: 2, cfts: 1, pubs: 5, researchers: 30, status: "Draft Guidelines", readiness: 0.42, growth: "+35%" },
-    { rank: 10, country: "Rwanda", projects: 2, cfts: 1, pubs: 4, researchers: 28, status: "Policy Development", readiness: 0.44, growth: "+50%" },
-    { rank: 11, country: "Tanzania", projects: 2, cfts: 1, pubs: 5, researchers: 32, status: "Draft Guidelines", readiness: 0.46, growth: "+28%" },
-    { rank: 12, country: "Senegal", projects: 1, cfts: 1, pubs: 4, researchers: 25, status: "Policy Development", readiness: 0.43, growth: "+20%" }
-  ];
+      // Organisms per country
+      const organismsByCountry = organisms.reduce((acc, org) => {
+        const country = org.country_name || org.country?.name || 'Unknown';
+        acc[country] = (acc[country] || 0) + 1;
+        return acc;
+      }, {});
+      const organismsSorted = Object.keys(organismsByCountry)
+        .filter(c => c !== 'Unknown')
+        .sort((a, b) => organismsByCountry[b] - organismsByCountry[a])
+        .slice(0, 12);
 
-  useEffect(() => {
-    setLoading(true);
-    setTimeout(() => {
-      setKpiData(kpiDataStatic);
-      setCountryRanking(countryRankingData);
+      const summary = {
+        totalProjects: projects.length,
+        totalCountries: countries.length,
+        totalInstitutions: institutions.length,
+        totalOrganisms: organisms.length,
+      };
+
+      const processedData = {
+        summary,
+        projectsByYear,
+        projectsByCountry,
+        readinessByCountry,
+        institutionsByCountry,
+        institutionsByCategory,
+        organismsByCountry,
+        sortedYears,
+        sortedCountries,
+        readinessSorted,
+        institutionsSorted,
+        organismsSorted,
+      };
+
+      setDashboardData(processedData);
+    } catch (err) {
+      console.error('Error fetching dashboard data:', err);
+      setError(err.message || 'Failed to load dashboard data. Please try again.');
+    } finally {
       setLoading(false);
-    }, 500);
+    }
   }, []);
 
   useEffect(() => {
-    if (!loading) {
-      initializeCharts();
-    }
-    return () => {
-      destroyCharts();
+    fetchDashboardData();
+  }, [fetchDashboardData]);
+
+  // Chart Configurations
+  const projectsByYearChartData = useMemo(() => {
+    if (!dashboardData) return null;
+    const { projectsByYear, sortedYears } = dashboardData;
+    
+    return {
+      labels: sortedYears,
+      datasets: [{
+        label: 'Projects',
+        data: sortedYears.map(y => projectsByYear[y] || 0),
+        borderColor: '#5B7E96',
+        backgroundColor: 'rgba(91, 126, 150, 0.08)',
+        fill: true,
+        tension: 0.4,
+        pointBackgroundColor: '#5B7E96',
+        pointBorderColor: '#fff',
+        pointBorderWidth: 2,
+        pointRadius: 5,
+        pointHoverRadius: 8,
+        borderWidth: 3,
+      }]
     };
-  }, [loading, selectedYear, selectedRegion]);
+  }, [dashboardData]);
 
-  const destroyCharts = () => {
-    Object.values(chartInstances.current).forEach(chart => {
-      if (chart) chart.destroy();
+  const projectsByCountryChartData = useMemo(() => {
+    if (!dashboardData) return null;
+    const { projectsByCountry, sortedCountries } = dashboardData;
+    
+    const gradientColors = sortedCountries.map((_, i) => {
+      const opacity = 0.4 + (i / sortedCountries.length) * 0.4;
+      return `rgba(91, 126, 150, ${opacity})`;
     });
-    chartInstances.current = {};
-  };
+    
+    return {
+      labels: sortedCountries,
+      datasets: [{
+        label: 'Projects',
+        data: sortedCountries.map(c => projectsByCountry[c] || 0),
+        backgroundColor: gradientColors,
+        borderColor: '#5B7E96',
+        borderWidth: 1.5,
+        borderRadius: 6,
+        barThickness: 16,
+      }]
+    };
+  }, [dashboardData]);
 
-  const initializeCharts = () => {
-    destroyCharts();
+  const readinessChartData = useMemo(() => {
+    if (!dashboardData) return null;
+    const { readinessByCountry, readinessSorted } = dashboardData;
+    
+    const colors = readinessSorted.map(c => readinessByCountry[c].level.color);
+    
+    return {
+      labels: readinessSorted,
+      datasets: [{
+        label: 'Readiness Score',
+        data: readinessSorted.map(c => Math.round(readinessByCountry[c].score * 100)),
+        backgroundColor: colors.map(c => c + '30'),
+        borderColor: colors,
+        borderWidth: 2.5,
+        borderRadius: 6,
+        barThickness: 16,
+      }]
+    };
+  }, [dashboardData]);
 
-    // Sector Chart (Bar)
-    const sectorCtx = document.getElementById('sectorChart');
-    if (sectorCtx) {
-      chartInstances.current.sector = new Chart(sectorCtx, {
-        type: 'bar',
-        data: {
-          labels: sectorData.labels,
-          datasets: [{
-            label: 'Number of Projects',
-            data: sectorData.values,
-            backgroundColor: sectorData.colors,
-            borderRadius: 8,
-            barPercentage: 0.7,
-            categoryPercentage: 0.8
-          }]
-        },
-        options: {
-          responsive: true,
-          maintainAspectRatio: true,
-          plugins: {
-            legend: { position: 'top' },
-            tooltip: { backgroundColor: '#1A2C3E', titleColor: '#fff', bodyColor: '#CFDFE6' }
-          },
-          scales: {
-            y: { beginAtZero: true, grid: { color: '#E4E8EF' }, title: { display: true, text: 'Number of Projects' } },
-            x: { grid: { display: false } }
-          }
+  const institutionsByCountryChartData = useMemo(() => {
+    if (!dashboardData) return null;
+    const { institutionsByCountry, institutionsSorted } = dashboardData;
+    
+    return {
+      labels: institutionsSorted,
+      datasets: [{
+        label: 'Institutions',
+        data: institutionsSorted.map(c => institutionsByCountry[c] || 0),
+        backgroundColor: 'rgba(139, 92, 246, 0.6)',
+        borderColor: '#8B5CF6',
+        borderWidth: 1.5,
+        borderRadius: 6,
+        barThickness: 16,
+      }]
+    };
+  }, [dashboardData]);
+
+  const institutionsByCategoryChartData = useMemo(() => {
+    if (!dashboardData) return null;
+    const { institutionsByCategory } = dashboardData;
+    
+    const categoryColors = {
+      'research': '#3B82F6',
+      'regulatory': '#EF4444',
+      'academic': '#8B5CF6',
+      'private': '#10B981',
+      'cso': '#F59E0B',
+      'government': '#6B7280',
+      'cg_center': '#14B8A6',
+      'international': '#EC4899'
+    };
+    
+    const labels = Object.keys(institutionsByCategory);
+    const colors = labels.map(l => categoryColors[l.toLowerCase()] || '#6B7280');
+    
+    return {
+      labels,
+      datasets: [{
+        data: Object.values(institutionsByCategory),
+        backgroundColor: colors,
+        borderWidth: 3,
+        borderColor: '#FFFFFF',
+        hoverOffset: 12,
+      }]
+    };
+  }, [dashboardData]);
+
+  const organismsByCountryChartData = useMemo(() => {
+    if (!dashboardData) return null;
+    const { organismsByCountry, organismsSorted } = dashboardData;
+    
+    return {
+      labels: organismsSorted,
+      datasets: [{
+        label: 'Organisms',
+        data: organismsSorted.map(c => organismsByCountry[c] || 0),
+        backgroundColor: 'rgba(16, 185, 129, 0.6)',
+        borderColor: '#10B981',
+        borderWidth: 1.5,
+        borderRadius: 6,
+        barThickness: 16,
+      }]
+    };
+  }, [dashboardData]);
+
+  const readinessSummary = useMemo(() => {
+    if (!dashboardData) return null;
+    const { readinessByCountry } = dashboardData;
+    const values = Object.values(readinessByCountry);
+    const avgScore = values.reduce((sum, v) => sum + v.score, 0) / values.length || 0;
+    const advanced = values.filter(v => v.score >= 0.7).length;
+    const intermediate = values.filter(v => v.score >= 0.55 && v.score < 0.7).length;
+    const foundational = values.filter(v => v.score < 0.55).length;
+    
+    return { avgScore, advanced, intermediate, foundational, total: values.length };
+  }, [dashboardData]);
+
+  // Chart options
+  const horizontalBarOptions = {
+    responsive: true,
+    maintainAspectRatio: false,
+    indexAxis: 'y',
+    plugins: {
+      legend: { display: false },
+      tooltip: { 
+        backgroundColor: 'rgba(0,0,0,0.8)',
+        titleFont: { size: 12, weight: '600' },
+        bodyFont: { size: 11 },
+        padding: 12,
+        cornerRadius: 8,
+        callbacks: {
+          label: (ctx) => `${ctx.parsed.x} items`
         }
-      });
-    }
-
-    // Regulatory Chart (Doughnut)
-    const regCtx = document.getElementById('regulatoryChart');
-    if (regCtx) {
-      chartInstances.current.regulatory = new Chart(regCtx, {
-        type: 'doughnut',
-        data: {
-          labels: regulatoryData.labels,
-          datasets: [{
-            data: regulatoryData.values,
-            backgroundColor: regulatoryData.colors,
-            borderWidth: 0,
-            hoverOffset: 10
-          }]
-        },
-        options: {
-          responsive: true,
-          maintainAspectRatio: true,
-          plugins: {
-            legend: { position: 'bottom' },
-            tooltip: { backgroundColor: '#1A2C3E' }
-          },
-          cutout: '60%'
-        }
-      });
-    }
-
-    // Trend Chart (Line)
-    const trendCtx = document.getElementById('trendChart');
-    if (trendCtx) {
-      chartInstances.current.trend = new Chart(trendCtx, {
-        type: 'line',
-        data: {
-          labels: trendData.labels,
-          datasets: [
-            { 
-              label: 'Active Projects', 
-              data: trendData.projects, 
-              borderColor: '#5B7E96', 
-              backgroundColor: 'rgba(91,126,150,0.1)', 
-              fill: true, 
-              tension: 0.3,
-              borderWidth: 3,
-              pointRadius: 4,
-              pointHoverRadius: 6,
-              pointBackgroundColor: '#5B7E96'
-            },
-            { 
-              label: 'Countries with Activity', 
-              data: trendData.countries, 
-              borderColor: '#B4A269', 
-              backgroundColor: 'rgba(180,162,105,0.05)', 
-              fill: true, 
-              tension: 0.3,
-              borderWidth: 3,
-              pointRadius: 4,
-              pointHoverRadius: 6,
-              pointBackgroundColor: '#B4A269'
-            },
-            { 
-              label: 'Publications', 
-              data: trendData.publications, 
-              borderColor: '#2C6E49', 
-              backgroundColor: 'rgba(44,110,73,0.05)', 
-              fill: true, 
-              tension: 0.3,
-              borderWidth: 3,
-              pointRadius: 4,
-              pointHoverRadius: 6,
-              pointBackgroundColor: '#2C6E49'
-            }
-          ]
-        },
-        options: {
-          responsive: true,
-          maintainAspectRatio: true,
-          plugins: {
-            tooltip: { mode: 'index', intersect: false, backgroundColor: '#1A2C3E' },
-            legend: { position: 'top' }
-          },
-          scales: {
-            y: { beginAtZero: true, grid: { color: '#E4E8EF' }, title: { display: true, text: 'Count' } },
-            x: { grid: { display: false } }
-          }
-        }
-      });
-    }
-
-    // Technology Chart (Horizontal Bar)
-    const techCtx = document.getElementById('techChart');
-    if (techCtx) {
-      chartInstances.current.tech = new Chart(techCtx, {
-        type: 'bar',
-        data: {
-          labels: techData.labels,
-          datasets: [{
-            label: 'Projects Using Technology',
-            data: techData.values,
-            backgroundColor: techData.colors,
-            borderRadius: 8
-          }]
-        },
-        options: {
-          responsive: true,
-          maintainAspectRatio: true,
-          indexAxis: 'y',
-          plugins: {
-            legend: { position: 'top' },
-            tooltip: { backgroundColor: '#1A2C3E' }
-          },
-          scales: {
-            x: { grid: { color: '#E4E8EF' }, title: { display: true, text: 'Number of Projects' } },
-            y: { grid: { display: false } }
-          }
-        }
-      });
-    }
-
-    // Funding Chart (Bar)
-    const fundingCtx = document.getElementById('fundingChart');
-    if (fundingCtx) {
-      chartInstances.current.funding = new Chart(fundingCtx, {
-        type: 'bar',
-        data: {
-          labels: fundingData.labels,
-          datasets: [{
-            label: 'Funding (USD Million)',
-            data: fundingData.values,
-            backgroundColor: fundingData.colors,
-            borderRadius: 8
-          }]
-        },
-        options: {
-          responsive: true,
-          maintainAspectRatio: true,
-          plugins: {
-            legend: { position: 'top' },
-            tooltip: { callbacks: { label: (ctx) => `${ctx.raw} Million USD` }, backgroundColor: '#1A2C3E' }
-          },
-          scales: {
-            y: { beginAtZero: true, grid: { color: '#E4E8EF' }, title: { display: true, text: 'Million USD' } },
-            x: { grid: { display: false } }
-          }
-        }
-      });
-    }
-
-    // Region Chart (Pie)
-    const regionCtx = document.getElementById('regionChart');
-    if (regionCtx) {
-      chartInstances.current.region = new Chart(regionCtx, {
-        type: 'pie',
-        data: {
-          labels: regionData.labels,
-          datasets: [{
-            data: regionData.values,
-            backgroundColor: regionData.colors,
-            borderWidth: 0
-          }]
-        },
-        options: {
-          responsive: true,
-          maintainAspectRatio: true,
-          plugins: {
-            legend: { position: 'bottom' },
-            tooltip: { backgroundColor: '#1A2C3E' }
-          }
-        }
-      });
+      }
+    },
+    scales: {
+      x: { 
+        beginAtZero: true, 
+        grid: { color: 'rgba(0,0,0,0.05)' },
+        title: { display: true, text: 'Count', font: { size: 11, weight: '500' } }
+      },
+      y: { 
+        grid: { display: false },
+        ticks: { font: { size: 11 } }
+      }
     }
   };
 
-  const getReadinessScore = (score) => {
-    const level = score >= 0.7 ? 'High' : score >= 0.55 ? 'Medium' : 'Low';
-    const color = score >= 0.7 ? '#2C6E49' : score >= 0.55 ? '#F57C00' : '#C62828';
-    return { level, color };
-  };
-
-  const getFilteredCountryData = () => {
-    let data = [...countryRanking];
-    if (selectedRegion !== 'all') {
-      // Filter logic would go here based on region
-      data = data.slice(0, 10);
+  const readinessBarOptions = {
+    responsive: true,
+    maintainAspectRatio: false,
+    indexAxis: 'y',
+    plugins: {
+      legend: { display: false },
+      tooltip: {
+        backgroundColor: 'rgba(0,0,0,0.8)',
+        titleFont: { size: 12, weight: '600' },
+        bodyFont: { size: 11 },
+        padding: 12,
+        cornerRadius: 8,
+        callbacks: {
+          label: (ctx) => `${ctx.parsed.x}% Readiness`
+        }
+      }
+    },
+    scales: {
+      x: { 
+        beginAtZero: true, 
+        max: 100,
+        grid: { color: 'rgba(0,0,0,0.05)' },
+        title: { display: true, text: 'Score (%)', font: { size: 11, weight: '500' } }
+      },
+      y: { 
+        grid: { display: false },
+        ticks: { font: { size: 11 } }
+      }
     }
-    return data;
   };
 
-  const totalStats = {
-    totalProjects: countryRanking.reduce((sum, c) => sum + c.projects, 0),
-    totalPublications: countryRanking.reduce((sum, c) => sum + c.pubs, 0),
-    totalResearchers: countryRanking.reduce((sum, c) => sum + c.researchers, 0),
-    avgReadiness: (countryRanking.reduce((sum, c) => sum + c.readiness, 0) / countryRanking.length).toFixed(2)
+  const lineOptions = {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: { 
+        position: 'top',
+        labels: { 
+          usePointStyle: true,
+          padding: 20,
+          font: { size: 12, weight: '500' }
+        }
+      }
+    },
+    scales: {
+      y: { 
+        beginAtZero: true, 
+        grid: { color: 'rgba(0,0,0,0.05)' },
+        title: { display: true, text: 'Number of Projects', font: { size: 11, weight: '500' } }
+      },
+      x: { 
+        grid: { display: false },
+        ticks: { font: { size: 11 } }
+      }
+    },
+    interaction: {
+      intersect: false,
+      mode: 'index'
+    }
   };
+
+  const doughnutOptions = {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: { 
+        position: 'right',
+        labels: { 
+          usePointStyle: true,
+          padding: 16,
+          font: { size: 11, weight: '500' },
+          generateLabels: (chart) => {
+            const data = chart.data;
+            return data.labels.map((label, i) => ({
+              text: `${label} (${data.datasets[0].data[i]})`,
+              fillStyle: data.datasets[0].backgroundColor[i],
+              strokeStyle: data.datasets[0].backgroundColor[i],
+              index: i
+            }));
+          }
+        }
+      }
+    },
+    cutout: '60%',
+  };
+
+  if (loading) {
+    return (
+      <div className="dashboard-page">
+        <div className="loading-state">
+          <div className="loading-spinner"></div>
+          <p className="loading-text">Loading dashboard data...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="dashboard-page">
+        <div className="error-state">
+          <div className="error-icon">⚠️</div>
+          <h3>Unable to load dashboard</h3>
+          <p>{error}</p>
+          <button onClick={fetchDashboardData} className="retry-btn">
+            <span>⟳</span> Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (!dashboardData) return null;
+
+  const { summary } = dashboardData;
 
   return (
     <div className="dashboard-page">
+      {/* Navigation */}
+      <nav className="dashboard-nav">
+        <div className="nav-container">
+          <button className="nav-back" onClick={onBackClick}>
+            <span>←</span> Back
+          </button>
+          <div className="nav-tabs">
+            <button 
+              className={`nav-tab ${activeTab === 'overview' ? 'active' : ''}`}
+              onClick={() => setActiveTab('overview')}
+            >
+              📊 Overview
+            </button>
+            <button 
+              className={`nav-tab ${activeTab === 'readiness' ? 'active' : ''}`}
+              onClick={() => setActiveTab('readiness')}
+            >
+              🎯 Readiness
+            </button>
+            <button 
+              className={`nav-tab ${activeTab === 'institutions' ? 'active' : ''}`}
+              onClick={() => setActiveTab('institutions')}
+            >
+              🏛️ Institutions
+            </button>
+          </div>
+          <div className="nav-actions">
+            <button className="nav-refresh" onClick={fetchDashboardData}>
+              ⟳
+            </button>
+          </div>
+        </div>
+      </nav>
+
       {/* Header */}
       <header className="dashboard-header">
         <div className="container">
-          <div className="header-inner">
-            <div className="logo-area">
-              <img 
-                className="logo-img" 
-                src="https://www.nepad.org/sites/default/files/AUDA%2025TH%20ANNIVERSARY%20LOGO%20Lock%20up-01.png" 
-                alt="AUDA-NEPAD Logo" 
-                onError={(e) => e.target.src = 'https://placehold.co/120x50'}
-              />
-              <div className="logo-text">
-                <h2>Genome Editing Programme</h2>
-                <p>AUDA-NEPAD · Performance Analytics</p>
-              </div>
+          <div className="header-grid">
+            <div className="header-title-group">
+              <h1 className="dashboard-title">
+                <span className="title-badge">📈</span>
+                Analytics Dashboard
+              </h1>
+              <p className="dashboard-subtitle">
+                Genome editing research & development across Africa
+              </p>
             </div>
-            <div className="nav-links">
-              <button onClick={onBackClick} className="back-link">
-                <i className="fas fa-arrow-left"></i> Back to Home
-              </button>
+            <div className="header-metrics">
+              <div className="metric-item">
+                <span className="metric-value">{summary.totalProjects}</span>
+                <span className="metric-label">Projects</span>
+              </div>
+              <div className="metric-divider"></div>
+              <div className="metric-item">
+                <span className="metric-value">{summary.totalCountries}</span>
+                <span className="metric-label">Countries</span>
+              </div>
+              <div className="metric-divider"></div>
+              <div className="metric-item">
+                <span className="metric-value">{summary.totalInstitutions}</span>
+                <span className="metric-label">Institutions</span>
+              </div>
+              <div className="metric-divider"></div>
+              <div className="metric-item">
+                <span className="metric-value">{summary.totalOrganisms}</span>
+                <span className="metric-label">Organisms</span>
+              </div>
             </div>
           </div>
         </div>
       </header>
 
-      {/* Hero Section */}
-      <div className="dashboard-hero">
+      <main className="dashboard-main">
         <div className="container">
-          <div className="hero-badge">
-            <i className="fas fa-chart-line"></i> DATA INSIGHTS
-          </div>
-          <h1>Analytics Dashboard</h1>
-          <p>Real-time metrics and visualizations on genome editing adoption, research output, and continental progress.</p>
-        </div>
-      </div>
 
-      <div className="container">
-        {/* Filter Bar */}
-        <div className="filter-bar-dashboard">
-          <div className="filter-group">
-            <label><i className="fas fa-calendar"></i> Year:</label>
-            <select value={selectedYear} onChange={(e) => setSelectedYear(e.target.value)}>
-              <option value="2024">2024</option>
-              <option value="2025">2025</option>
-              <option value="2026">2026</option>
-            </select>
-          </div>
-          <div className="filter-group">
-            <label><i className="fas fa-globe-africa"></i> Region:</label>
-            <select value={selectedRegion} onChange={(e) => setSelectedRegion(e.target.value)}>
-              <option value="all">All Africa</option>
-              <option value="east">East Africa</option>
-              <option value="west">West Africa</option>
-              <option value="southern">Southern Africa</option>
-              <option value="north">North Africa</option>
-              <option value="central">Central Africa</option>
-            </select>
-          </div>
-          <div className="date-range">
-            <i className="fas fa-info-circle"></i>
-            <span>Data updated: May 2026</span>
-          </div>
-        </div>
-
-        {/* Loading State */}
-        {loading ? (
-          <div className="loading-state">
-            <div className="loading-spinner"></div>
-            <p>Loading dashboard data...</p>
-          </div>
-        ) : (
-          <>
-            {/* KPI Cards */}
-            <div className="kpi-grid">
-              {kpiData.map((kpi, idx) => (
-                <div key={idx} className="kpi-card">
-                  <div className="kpi-icon">
-                    <i className={kpi.icon}></i>
+          {/* Readiness Overview */}
+          {readinessSummary && (
+            <section className="readiness-section">
+              <div className="readiness-card">
+                <div className="readiness-icon">🎯</div>
+                <div className="readiness-content">
+                  <div className="readiness-header">
+                    <h4>Average Gene Editing Readiness</h4>
+                    <div className="readiness-score">
+                      <span className="score-value">{(readinessSummary.avgScore * 100).toFixed(0)}%</span>
+                      <span className={`score-level ${readinessSummary.avgScore >= 0.7 ? 'advanced' : readinessSummary.avgScore >= 0.55 ? 'intermediate' : 'foundational'}`}>
+                        {readinessSummary.avgScore >= 0.7 ? 'Advanced' : readinessSummary.avgScore >= 0.55 ? 'Intermediate' : 'Foundational'}
+                      </span>
+                    </div>
                   </div>
-                  <div className="kpi-value">{kpi.value}</div>
-                  <div className="kpi-label">{kpi.label}</div>
-                  <div className="kpi-change">
-                    <i className={`fas fa-arrow-${kpi.trend === 'up' ? 'up' : 'down'}`}></i>
-                    {kpi.change}
+                  <div className="readiness-breakdown">
+                    <span className="breakdown-item">
+                      <span className="dot advanced"></span>
+                      {readinessSummary.advanced} Advanced
+                    </span>
+                    <span className="breakdown-item">
+                      <span className="dot intermediate"></span>
+                      {readinessSummary.intermediate} Intermediate
+                    </span>
+                    <span className="breakdown-item">
+                      <span className="dot foundational"></span>
+                      {readinessSummary.foundational} Foundational
+                    </span>
+                    <span className="breakdown-total">
+                      {readinessSummary.total} countries
+                    </span>
                   </div>
                 </div>
-              ))}
-            </div>
+              </div>
+            </section>
+          )}
 
-            {/* Summary Stats */}
-            <div className="summary-stats">
-              <div className="summary-card">
-                <div className="summary-icon"><i className="fas fa-chart-line"></i></div>
-                <div className="summary-info">
-                  <div className="summary-value">{totalStats.totalProjects}</div>
-                  <div className="summary-label">Total Projects Across Africa</div>
-                </div>
-              </div>
-              <div className="summary-card">
-                <div className="summary-icon"><i className="fas fa-file-alt"></i></div>
-                <div className="summary-info">
-                  <div className="summary-value">{totalStats.totalPublications}+</div>
-                  <div className="summary-label">Peer-reviewed Publications</div>
-                </div>
-              </div>
-              <div className="summary-card">
-                <div className="summary-icon"><i className="fas fa-user-graduate"></i></div>
-                <div className="summary-info">
-                  <div className="summary-value">{totalStats.totalResearchers}+</div>
-                  <div className="summary-label">Researchers Trained</div>
-                </div>
-              </div>
-              <div className="summary-card">
-                <div className="summary-icon"><i className="fas fa-chart-simple"></i></div>
-                <div className="summary-info">
-                  <div className="summary-value">{Math.round(totalStats.avgReadiness * 100)}%</div>
-                  <div className="summary-label">Average Readiness Score</div>
-                </div>
-              </div>
-            </div>
+          <p>&nbsp;</p>
 
-            {/* Charts Row 1 */}
-            <div className="chart-grid">
-              <div className="chart-card">
-                <h3><i className="fas fa-chart-bar"></i> Projects by Sector</h3>
-                <div className="chart-container">
-                  <canvas id="sectorChart"></canvas>
+          {/* Quick Stats */}
+          {/* <section className="stats-section">
+            <div className="stats-grid">
+              <div className="stat-card" style={{ '--stat-color': '#5B7E96' }}>
+                <div className="stat-icon">📋</div>
+                <div className="stat-info">
+                  <span className="stat-number">{summary.totalProjects}</span>
+                  <span className="stat-label">Total Projects</span>
                 </div>
               </div>
-              <div className="chart-card">
-                <h3><i className="fas fa-chart-pie"></i> Regulatory Status Distribution</h3>
-                <div className="chart-container">
-                  <canvas id="regulatoryChart"></canvas>
+              <div className="stat-card" style={{ '--stat-color': '#10B981' }}>
+                <div className="stat-icon">🌍</div>
+                <div className="stat-info">
+                  <span className="stat-number">{summary.totalCountries}</span>
+                  <span className="stat-label">Countries</span>
+                </div>
+              </div>
+              <div className="stat-card" style={{ '--stat-color': '#8B5CF6' }}>
+                <div className="stat-icon">🏛️</div>
+                <div className="stat-info">
+                  <span className="stat-number">{summary.totalInstitutions}</span>
+                  <span className="stat-label">Institutions</span>
+                </div>
+              </div>
+              <div className="stat-card" style={{ '--stat-color': '#F59E0B' }}>
+                <div className="stat-icon">🧬</div>
+                <div className="stat-info">
+                  <span className="stat-number">{summary.totalOrganisms}</span>
+                  <span className="stat-label">Organisms</span>
                 </div>
               </div>
             </div>
+          </section> */}
 
-            {/* Full Width Trend Chart */}
-            <div className="full-width-chart">
-              <h3><i className="fas fa-chart-line"></i> Genome Editing Adoption Trend (2020-2026)</h3>
-              <div className="chart-container">
-                <canvas id="trendChart"></canvas>
+          {/* Charts Grid */}
+          <div className="charts-grid">
+            {/* Projects per Year */}
+            <div className="chart-card">
+              <div className="chart-header">
+                <h3>📈 Projects per Year</h3>
+                <span className="chart-badge">Trend</span>
+              </div>
+              <div className="chart-body">
+                {projectsByYearChartData && (
+                  <Line data={projectsByYearChartData} options={lineOptions} />
+                )}
               </div>
             </div>
 
-            {/* Charts Row 2 */}
-            <div className="chart-grid">
-              <div className="chart-card">
-                <h3><i className="fas fa-dna"></i> Projects by Technology</h3>
-                <div className="chart-container">
-                  <canvas id="techChart"></canvas>
-                </div>
+            {/* Projects per Country */}
+            <div className="chart-card">
+              <div className="chart-header">
+                <h3>🌍 Projects per Country</h3>
+                <span className="chart-badge">Distribution</span>
               </div>
-              <div className="chart-card">
-                <h3><i className="fas fa-chart-line"></i> Funding by Source (USD Million)</h3>
-                <div className="chart-container">
-                  <canvas id="fundingChart"></canvas>
-                </div>
+              <div className="chart-body">
+                {projectsByCountryChartData && (
+                  <Bar data={projectsByCountryChartData} options={horizontalBarOptions} />
+                )}
               </div>
             </div>
 
-            {/* Regional Distribution */}
-            <div className="chart-card full-width">
-              <h3><i className="fas fa-map-marked-alt"></i> Regional Distribution of Projects</h3>
-              <div className="chart-container" style={{ maxWidth: '500px', margin: '0 auto' }}>
-                <canvas id="regionChart"></canvas>
+            {/* Readiness per Country */}
+            <div className="chart-card">
+              <div className="chart-header">
+                <h3>🎯 Readiness per Country</h3>
+                <span className="chart-badge">Score</span>
+              </div>
+              <div className="chart-body">
+                {readinessChartData && (
+                  <Bar data={readinessChartData} options={readinessBarOptions} />
+                )}
               </div>
             </div>
 
-            {/* Top Countries Table */}
-            <div className="data-table-container">
-              <h3><i className="fas fa-trophy"></i> Top Countries by Genome Editing Activity</h3>
-              <div className="table-wrapper">
-                <table className="data-table">
-                  <thead>
-                    <tr>
-                      <th>Rank</th>
-                      <th>Country</th>
-                      <th>Active Projects</th>
-                      <th>CFTs</th>
-                      <th>Publications</th>
-                      <th>Researchers</th>
-                      <th>Regulatory Status</th>
-                      <th>Readiness</th>
-                      <th>Growth</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {getFilteredCountryData().map((country, idx) => {
-                      const readiness = getReadinessScore(country.readiness);
-                      return (
-                        <tr key={idx}>
-                          <td>{idx + 1}</td>
-                          <td><strong>{country.country}</strong></td>
-                          <td>{country.projects}</td>
-                          <td>{country.cfts}</td>
-                          <td>{country.pubs}</td>
-                          <td>{country.researchers}</td>
-                          <td>
-                            <span className="status-badge">{country.status}</span>
-                          </td>
-                          <td>
-                            <div className="readiness-bar">
-                              <div className="readiness-fill" style={{ width: `${country.readiness * 100}%`, background: readiness.color }}></div>
-                              <span className="readiness-text">{Math.round(country.readiness * 100)}%</span>
-                            </div>
-                          </td>
-                          <td className="growth-positive">{country.growth}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+            {/* Institutions per Country */}
+            <div className="chart-card">
+              <div className="chart-header">
+                <h3>🏛️ Institutions per Country</h3>
+                <span className="chart-badge">Count</span>
+              </div>
+              <div className="chart-body">
+                {institutionsByCountryChartData && (
+                  <Bar data={institutionsByCountryChartData} options={horizontalBarOptions} />
+                )}
               </div>
             </div>
-          </>
-        )}
-      </div>
 
-      {/* Footer */}
-      <footer className="dashboard-footer">
-        <div className="container">
-          <div className="footer-content">
-            <p>© 2026 AUDA-NEPAD Genome Editing Programme — Data updated quarterly. Last update: May 2026.</p>
-            <button onClick={onBackClick} className="footer-back-btn">
-              <i className="fas fa-home"></i> Back to Home
-            </button>
+            {/* Institutions by Category */}
+            <div className="chart-card">
+              <div className="chart-header">
+                <h3>📊 Institutions by Category</h3>
+                <span className="chart-badge">Distribution</span>
+              </div>
+              <div className="chart-body chart-doughnut">
+                {institutionsByCategoryChartData && (
+                  <Doughnut data={institutionsByCategoryChartData} options={doughnutOptions} />
+                )}
+              </div>
+            </div>
+
+            {/* Organisms per Country */}
+            <div className="chart-card">
+              <div className="chart-header">
+                <h3>🧬 Organisms per Country</h3>
+                <span className="chart-badge">Count</span>
+              </div>
+              <div className="chart-body">
+                {organismsByCountryChartData && (
+                  <Bar data={organismsByCountryChartData} options={horizontalBarOptions} />
+                )}
+              </div>
+            </div>
           </div>
+
+          {/* Legend Footer */}
+          <section className="legend-section">
+            <div className="legend-container">
+              <div className="legend-title">Readiness Levels</div>
+              <div className="legend-items">
+                <div className="legend-item">
+                  <span className="legend-color" style={{ background: '#10B981' }}></span>
+                  <div className="legend-info">
+                    <strong>Advanced</strong>
+                    <span>70%+</span>
+                  </div>
+                </div>
+                <div className="legend-item">
+                  <span className="legend-color" style={{ background: '#F59E0B' }}></span>
+                  <div className="legend-info">
+                    <strong>Intermediate</strong>
+                    <span>55-69%</span>
+                  </div>
+                </div>
+                <div className="legend-item">
+                  <span className="legend-color" style={{ background: '#EF4444' }}></span>
+                  <div className="legend-info">
+                    <strong>Foundational</strong>
+                    <span>&lt;55%</span>
+                  </div>
+                </div>
+              </div>
+              <div className="legend-note">
+                <span>💡</span>
+                <span>Based on regulatory framework, infrastructure, and research capacity</span>
+              </div>
+            </div>
+          </section>
         </div>
-      </footer>
+      </main>
+
+    
     </div>
   );
 };

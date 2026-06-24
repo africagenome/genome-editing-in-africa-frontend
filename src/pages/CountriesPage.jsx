@@ -1,393 +1,486 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+// pages/CountriesPage.jsx
+
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import Chart from 'chart.js/auto';
+import { useData } from '../context/DataContext';
+import apiService from '../services/apiService';
 import './CountriesPage.css';
 
+// ============================================
+// SEARCHABLE DROPDOWN COMPONENT
+// ============================================
+const SearchableDropdown = ({ 
+  options = [], 
+  value = '', 
+  onChange, 
+  placeholder = 'Search...', 
+  label = '', 
+  icon = null,
+  showCounts = true,
+  disabled = false,
+  compact = false
+}) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const dropdownRef = useRef(null);
+
+  const filteredOptions = (options || []).filter(opt => {
+    if (!opt) return false;
+    const labelStr = opt.label?.toString()?.toLowerCase() || '';
+    const searchStr = searchTerm?.toString()?.toLowerCase() || '';
+    return labelStr.includes(searchStr);
+  });
+
+  const selectedOption = (options || []).find(opt => {
+    if (!opt) return false;
+    const optValue = opt.value?.toString() || '';
+    const currentValue = value?.toString() || '';
+    return optValue === currentValue;
+  });
+
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  useEffect(() => {
+    const handleEscape = (e) => {
+      if (e.key === 'Escape') setIsOpen(false);
+    };
+    document.addEventListener('keydown', handleEscape);
+    return () => document.removeEventListener('keydown', handleEscape);
+  }, []);
+
+  const handleSelect = (option) => {
+    onChange(option?.value || '');
+    setIsOpen(false);
+    setSearchTerm('');
+  };
+
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter' && filteredOptions.length > 0) {
+      handleSelect(filteredOptions[0]);
+    }
+  };
+
+  const displayValue = selectedOption?.label?.toString() || '';
+
+  return (
+    <div className={`searchable-dropdown ${compact ? 'compact' : ''}`} ref={dropdownRef}>
+      <div className="dropdown-label">
+        {icon && <i className={icon}></i>}
+        <span>{label}</span>
+        {selectedOption && !isOpen && (
+          <span className="dropdown-selected-value">{displayValue}</span>
+        )}
+      </div>
+      <div 
+        className={`dropdown-input-wrapper ${isOpen ? 'focused' : ''} ${disabled ? 'disabled' : ''}`}
+        onClick={() => !disabled && setIsOpen(!isOpen)}
+        role="combobox"
+        aria-expanded={isOpen}
+        aria-haspopup="listbox"
+      >
+        <input
+          type="text"
+          placeholder={placeholder}
+          value={isOpen ? searchTerm : displayValue}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          onFocus={() => !disabled && setIsOpen(true)}
+          onKeyDown={handleKeyDown}
+          className="dropdown-input"
+          disabled={disabled}
+          readOnly={!isOpen}
+          aria-label={`Search ${label}`}
+          autoComplete="off"
+        />
+        <i className={`fas fa-chevron-${isOpen ? 'up' : 'down'} dropdown-arrow`}></i>
+        {selectedOption && !isOpen && value && (
+          <button 
+            className="dropdown-clear"
+            onClick={(e) => {
+              e.stopPropagation();
+              onChange('');
+            }}
+            aria-label={`Clear ${label} filter`}
+          >
+            <i className="fas fa-times-circle"></i>
+          </button>
+        )}
+      </div>
+      {isOpen && (
+        <div className="dropdown-options" role="listbox">
+          <div 
+            className={`dropdown-option all-option ${!value ? 'selected' : ''}`} 
+            onClick={() => handleSelect({ value: '' })}
+            role="option"
+            aria-selected={!value}
+          >
+            <span>All {label}</span>
+            {!value && <i className="fas fa-check option-check"></i>}
+          </div>
+          {filteredOptions.length === 0 ? (
+            <div className="dropdown-no-results">No options found</div>
+          ) : (
+            filteredOptions.map((option, index) => {
+              const isSelected = value?.toString() === option.value?.toString();
+              const optionKey = option.value?.toString() || `option-${index}`;
+              return (
+                <div
+                  key={optionKey}
+                  className={`dropdown-option ${isSelected ? 'selected' : ''}`}
+                  onClick={() => handleSelect(option)}
+                  role="option"
+                  aria-selected={isSelected}
+                >
+                  {option.color && <span className="status-color-dot" style={{ backgroundColor: option.color }}></span>}
+                  <span>{option.label?.toString() || 'Unknown'}</span>
+                  {showCounts && option.count !== undefined && (
+                    <span className="option-count">{option.count}</span>
+                  )}
+                  {isSelected && (
+                    <i className="fas fa-check option-check"></i>
+                  )}
+                </div>
+              );
+            })
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ============================================
+// MAIN COUNTRIES COMPONENT
+// ============================================
 const CountriesPage = ({ onBackClick }) => {
-  const [selectedCountry, setSelectedCountry] = useState('Kenya');
+  const { countries: contextCountries } = useData();
+  const [selectedCountry, setSelectedCountry] = useState(null);
   const [countryData, setCountryData] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [countries, setCountries] = useState([]);
+  const [isMobileFilterOpen, setIsMobileFilterOpen] = useState(false);
+  
+  // Filter states
+  const [selectedRegion, setSelectedRegion] = useState('');
+  const [selectedStatus, setSelectedStatus] = useState('');
+  const [selectedSector, setSelectedSector] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   
+  const [filterOptions, setFilterOptions] = useState({
+    regions: [],
+    statuses: [],
+    sectors: []
+  });
+
   const trendChartRef = useRef(null);
   const focusChartRef = useRef(null);
   const readinessChartRef = useRef(null);
   const chartInstances = useRef({ trend: null, focus: null, readiness: null });
 
-  // Comprehensive Country Data
-  const countryProfiles = {
-    "Kenya": {
-      name: "Kenya",
-      flag: "🇰🇪",
-      capital: "Nairobi",
-      population: "54.9M",
-      metrics: { 
-        projects: 9, 
-        cfts: 6, 
-        publications: 28, 
-        institutions: 12, 
-        researchers: 156, 
-        readiness: 0.78,
-        funding: "$8.5M",
-        collaborations: 24
-      },
-      trends: { 
-        years: ["2021", "2022", "2023", "2024", "2025", "2026"], 
-        projects: [1, 2, 4, 6, 8, 9], 
-        pubs: [3, 6, 12, 18, 24, 28],
-        funding: [1.2, 2.1, 3.5, 5.2, 7.1, 8.5]
-      },
-      focus: { 
-        labels: ["Crop Improvement", "Regulatory", "Capacity Building", "Gene Therapy"], 
-        values: [65, 15, 12, 8] 
-      },
-      institutions: [
-        { name: "KALRO (Kenya Agricultural & Livestock Research Organization)", type: "Research", focus: "Crop Improvement" },
-        { name: "National Biosafety Authority (NBA)", type: "Regulatory", focus: "Biosafety" },
-        { name: "University of Nairobi - Biotechnology Dept", type: "Academic", focus: "Research & Training" },
-        { name: "KEMRI - Wellcome Trust", type: "Health Research", focus: "Gene Therapy" },
-        { name: "ISAAA AfriCenter", type: "Capacity Building", focus: "Knowledge Sharing" },
-        { name: "International Livestock Research Institute (ILRI)", type: "Research", focus: "Animal Genetics" }
-      ],
-      projects: [
-        { name: "Drought-Tolerant Maize", status: "CFT", year: "2024-2026", lead: "KALRO" },
-        { name: "Salt-Tolerant Rice", status: "R&D", year: "2023-2026", lead: "KALRO/IRRI" },
-        { name: "CRISPR Cassava", status: "CFT", year: "2025-2027", lead: "KALRO/IITA" }
-      ],
-      timeline: [
-        { year: "2019", text: "Biosafety Act amended to include emerging technologies", type: "policy" },
-        { year: "2022", text: "First confined field trial for gene-edited maize approved", type: "milestone" },
-        { year: "2024", text: "National Genome Editing Guidelines adopted", type: "policy" },
-        { year: "2025", text: "CRISPR cassava CFT initiated", type: "project" },
-        { year: "2026", text: "Regional training hub established at KALRO", type: "milestone" }
-      ],
-      regulatory: { 
-        biosafety: "Functional Framework", 
-        gedGuidelines: "Adopted", 
-        classification: "Product-based",
-        lastUpdate: "2024",
-        status: "Active"
-      },
-      publications: [
-        { title: "CRISPR-Cas9 mediated drought tolerance in maize", journal: "Plant Biotechnology Journal", year: "2024", citations: 45 },
-        { title: "Genome editing landscape in East Africa", journal: "Frontiers in Plant Science", year: "2025", citations: 28 },
-        { title: "Regulatory framework for gene editing in Kenya", journal: "GM Crops & Food", year: "2024", citations: 32 }
-      ]
-    },
-    "South Africa": {
-      name: "South Africa",
-      flag: "🇿🇦",
-      capital: "Pretoria",
-      population: "60.6M",
-      metrics: { 
-        projects: 12, 
-        cfts: 8, 
-        publications: 34, 
-        institutions: 15, 
-        researchers: 210, 
-        readiness: 0.85,
-        funding: "$12.3M",
-        collaborations: 32
-      },
-      trends: { 
-        years: ["2021", "2022", "2023", "2024", "2025", "2026"], 
-        projects: [3, 5, 7, 9, 11, 12], 
-        pubs: [5, 9, 15, 22, 29, 34],
-        funding: [2.5, 4.2, 6.1, 8.3, 10.5, 12.3]
-      },
-      focus: { 
-        labels: ["Crop Improvement", "Gene Therapy", "Regulatory", "Industrial"], 
-        values: [55, 25, 12, 8] 
-      },
-      institutions: [
-        { name: "Agricultural Research Council (ARC)", type: "Research", focus: "Crop Improvement" },
-        { name: "University of Cape Town - Genetics Dept", type: "Academic", focus: "Gene Therapy" },
-        { name: "Stellenbosch University - Plant Breeding", type: "Academic", focus: "Plant Genetics" },
-        { name: "DALRRD (Department of Agriculture)", type: "Regulatory", focus: "Policy" },
-        { name: "Seed Co South Africa", type: "Private Sector", focus: "Commercialization" },
-        { name: "Council for Scientific and Industrial Research (CSIR)", type: "Research", focus: "Biotechnology" }
-      ],
-      projects: [
-        { name: "Gene-Edited Sorghum", status: "Commercial", year: "2025", lead: "ARC/Seed Co" },
-        { name: "Sickle Cell Gene Therapy", status: "R&D", year: "2024-2028", lead: "UCT" },
-        { name: "Nitrogen-Efficient Maize", status: "R&D", year: "2024-2027", lead: "Stellenbosch University" }
-      ],
-      timeline: [
-        { year: "2020", text: "Product-based regulatory framework proposed", type: "policy" },
-        { year: "2022", text: "First gene-edited sorghum field trial approved", type: "milestone" },
-        { year: "2024", text: "Commercial release guidelines finalized", type: "policy" },
-        { year: "2025", text: "First commercial release of gene-edited sorghum", type: "project" },
-        { year: "2026", text: "Gene therapy research center launched", type: "milestone" }
-      ],
-      regulatory: { 
-        biosafety: "Functional Framework", 
-        gedGuidelines: "Adopted", 
-        classification: "Product-based",
-        lastUpdate: "2024",
-        status: "Active"
-      },
-      publications: [
-        { title: "First commercial gene-edited crop in Africa", journal: "Nature Biotechnology", year: "2025", citations: 67 },
-        { title: "CRISPR for sickle cell disease", journal: "Blood", year: "2024", citations: 52 },
-        { title: "Regulatory innovation in South Africa", journal: "GM Crops & Food", year: "2024", citations: 38 }
-      ]
-    },
-    "Nigeria": {
-      name: "Nigeria",
-      flag: "🇳🇬",
-      capital: "Abuja",
-      population: "218.6M",
-      metrics: { 
-        projects: 7, 
-        cfts: 4, 
-        publications: 22, 
-        institutions: 10, 
-        researchers: 120, 
-        readiness: 0.62,
-        funding: "$5.8M",
-        collaborations: 18
-      },
-      trends: { 
-        years: ["2021", "2022", "2023", "2024", "2025", "2026"], 
-        projects: [1, 2, 3, 5, 6, 7], 
-        pubs: [2, 4, 8, 13, 18, 22],
-        funding: [0.8, 1.5, 2.4, 3.6, 4.8, 5.8]
-      },
-      focus: { 
-        labels: ["Crop Improvement", "Regulatory", "Capacity Building", "Health"], 
-        values: [70, 15, 10, 5] 
-      },
-      institutions: [
-        { name: "National Biosafety Management Agency (NBMA)", type: "Regulatory", focus: "Biosafety" },
-        { name: "IITA (International Institute of Tropical Agriculture)", type: "Research", focus: "Cassava" },
-        { name: "NABDA (National Biotechnology Development Agency)", type: "Research", focus: "Biotech" },
-        { name: "University of Ibadan", type: "Academic", focus: "Plant Breeding" },
-        { name: "AATF (African Agricultural Technology Foundation)", type: "Partnership", focus: "Technology Transfer" }
-      ],
-      projects: [
-        { name: "Cassava Mosaic Virus Resistance", status: "CFT", year: "2024-2027", lead: "IITA/NABDA" },
-        { name: "Cowpea Pod Borer Resistance", status: "R&D", year: "2023-2026", lead: "NABDA" },
-        { name: "Maize Drought Tolerance", status: "R&D", year: "2024-2027", lead: "IITA" }
-      ],
-      timeline: [
-        { year: "2021", text: "National Biotechnology Policy revised", type: "policy" },
-        { year: "2023", text: "Genome editing guidelines drafting commenced", type: "policy" },
-        { year: "2024", text: "First CRISPR cassava CFT approved", type: "milestone" },
-        { year: "2025", text: "Draft guidelines open for consultation", type: "policy" },
-        { year: "2026", text: "Stakeholder validation workshop held", type: "milestone" }
-      ],
-      regulatory: { 
-        biosafety: "Functional Framework", 
-        gedGuidelines: "Draft Guidelines", 
-        classification: "Process-based",
-        lastUpdate: "2025",
-        status: "In Development"
-      },
-      publications: [
-        { title: "CRISPR for cassava improvement in Nigeria", journal: "Plant Science", year: "2024", citations: 34 },
-        { title: "Regulatory pathways for gene editing", journal: "Frontiers in Bioengineering", year: "2025", citations: 22 }
-      ]
-    },
-    "Ghana": {
-      name: "Ghana",
-      flag: "🇬🇭",
-      capital: "Accra",
-      population: "33.1M",
-      metrics: { 
-        projects: 5, 
-        cfts: 4, 
-        publications: 16, 
-        institutions: 8, 
-        researchers: 85, 
-        readiness: 0.71,
-        funding: "$4.2M",
-        collaborations: 14
-      },
-      trends: { 
-        years: ["2021", "2022", "2023", "2024", "2025", "2026"], 
-        projects: [0, 1, 2, 3, 4, 5], 
-        pubs: [1, 3, 6, 10, 13, 16],
-        funding: [0.3, 0.8, 1.5, 2.4, 3.3, 4.2]
-      },
-      focus: { 
-        labels: ["Crop Improvement", "Regulatory", "Capacity Building"], 
-        values: [75, 15, 10] 
-      },
-      institutions: [
-        { name: "National Biosafety Authority (NBA)", type: "Regulatory", focus: "Biosafety" },
-        { name: "CSIR-SARI (Savanna Agricultural Research Institute)", type: "Research", focus: "Cowpea" },
-        { name: "University of Ghana - WACCI", type: "Academic", focus: "Plant Breeding" },
-        { name: "AGRA (Alliance for Green Revolution)", type: "Partner", focus: "Policy" }
-      ],
-      projects: [
-        { name: "Pod Borer-Resistant Cowpea", status: "CFT", year: "2024-2026", lead: "CSIR-SARI" },
-        { name: "Drought-Tolerant Maize", status: "R&D", year: "2023-2026", lead: "CSIR-CRI" }
-      ],
-      timeline: [
-        { year: "2022", text: "Biosafety Act review initiated", type: "policy" },
-        { year: "2023", text: "Genome editing policy development commenced", type: "policy" },
-        { year: "2024", text: "First cowpea CFT approved", type: "milestone" },
-        { year: "2025", text: "Draft guidelines under stakeholder review", type: "policy" }
-      ],
-      regulatory: { 
-        biosafety: "Functional Framework", 
-        gedGuidelines: "Draft Guidelines", 
-        classification: "Product-based",
-        lastUpdate: "2025",
-        status: "In Development"
-      },
-      publications: [
-        { title: "Gene editing for cowpea improvement", journal: "Legume Science", year: "2024", citations: 18 },
-        { title: "Biosafety governance in West Africa", journal: "GM Crops & Food", year: "2025", citations: 12 }
-      ]
-    },
-    "Ethiopia": {
-      name: "Ethiopia",
-      flag: "🇪🇹",
-      capital: "Addis Ababa",
-      population: "126.5M",
-      metrics: { 
-        projects: 3, 
-        cfts: 1, 
-        publications: 8, 
-        institutions: 6, 
-        researchers: 45, 
-        readiness: 0.55,
-        funding: "$2.3M",
-        collaborations: 8
-      },
-      trends: { 
-        years: ["2021", "2022", "2023", "2024", "2025", "2026"], 
-        projects: [0, 0, 1, 2, 2, 3], 
-        pubs: [0, 1, 2, 4, 6, 8],
-        funding: [0, 0.2, 0.6, 1.1, 1.7, 2.3]
-      },
-      focus: { 
-        labels: ["Crop Improvement", "Capacity Building", "Regulatory"], 
-        values: [80, 15, 5] 
-      },
-      institutions: [
-        { name: "Ethiopian Institute of Agricultural Research (EIAR)", type: "Research", focus: "Teff" },
-        { name: "Addis Ababa University - Biotechnology Dept", type: "Academic", focus: "Plant Genetics" },
-        { name: "Environment Protection Authority (EPA)", type: "Regulatory", focus: "Biosafety" }
-      ],
-      projects: [
-        { name: "Teff Lodging Resistance using TALENs", status: "R&D", year: "2023-2026", lead: "EIAR" },
-        { name: "Drought-Tolerant Sorghum", status: "R&D", year: "2024-2027", lead: "EIAR" }
-      ],
-      timeline: [
-        { year: "2023", text: "Genome editing research initiated", type: "project" },
-        { year: "2024", text: "National guideline development started", type: "policy" },
-        { year: "2025", text: "First gene-edited crop field trial planned", type: "milestone" }
-      ],
-      regulatory: { 
-        biosafety: "Developing", 
-        gedGuidelines: "In Development", 
-        classification: "Not specified",
-        lastUpdate: "2025",
-        status: "Emerging"
-      },
-      publications: [
-        { title: "TALENs for teff improvement", journal: "Journal of Plant Biotechnology", year: "2025", citations: 8 }
-      ]
+  // ===== FILTER OPTIONS =====
+  useEffect(() => {
+    if (countries.length > 0) {
+      const regions = [...new Set(countries.map(c => c.region_name).filter(Boolean))].map(region => ({
+        value: region,
+        label: region,
+        count: countries.filter(c => c.region_name === region).length
+      }));
+
+      const statuses = [
+        { value: 'functional', label: 'Functional Framework', count: countries.filter(c => c.biosafety_status === 'functional').length },
+        { value: 'draft', label: 'Draft Guidelines', count: countries.filter(c => c.biosafety_status === 'draft').length },
+        { value: 'development', label: 'Policy Development', count: countries.filter(c => c.biosafety_status === 'development').length },
+        { value: 'none', label: 'No Specific Framework', count: countries.filter(c => c.biosafety_status === 'none').length }
+      ];
+
+      const sectors = [
+        { value: 'agriculture', label: 'Agriculture', count: countries.filter(c => c.sector === 'agriculture').length },
+        { value: 'health', label: 'Health', count: countries.filter(c => c.sector === 'health').length },
+        { value: 'industry', label: 'Industry', count: countries.filter(c => c.sector === 'industry').length }
+      ];
+
+      setFilterOptions({ regions, statuses, sectors });
+    }
+  }, [countries]);
+
+  // ===== FETCH COUNTRIES =====
+  useEffect(() => {
+    const fetchCountries = async () => {
+      try {
+        setLoading(true);
+        const response = await apiService.getCountries({ limit: 100 });
+        const countriesData = response.results || response || [];
+        setCountries(countriesData);
+        
+        if (countriesData.length > 0 && !selectedCountry) {
+          setSelectedCountry(countriesData[0]);
+        }
+      } catch (err) {
+        console.error('Error fetching countries:', err);
+        setError('Failed to load countries. Please try again.');
+        if (contextCountries && contextCountries.length > 0) {
+          setCountries(contextCountries);
+          setSelectedCountry(contextCountries[0]);
+        }
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchCountries();
+  }, [contextCountries]);
+
+  // ===== FETCH COUNTRY DETAILS =====
+  useEffect(() => {
+    if (selectedCountry) {
+      fetchCountryDetails(selectedCountry);
+    }
+  }, [selectedCountry]);
+
+  // ===== FILTER COUNTRIES =====
+  const filteredCountries = useMemo(() => {
+    let results = [...countries];
+
+    if (searchTerm) {
+      const term = searchTerm.toLowerCase();
+      results = results.filter(c => 
+        c.name?.toLowerCase().includes(term) ||
+        c.region_name?.toLowerCase().includes(term)
+      );
+    }
+
+    if (selectedRegion) {
+      results = results.filter(c => c.region_name === selectedRegion);
+    }
+
+    if (selectedStatus) {
+      results = results.filter(c => c.biosafety_status === selectedStatus);
+    }
+
+    if (selectedSector) {
+      results = results.filter(c => c.sector === selectedSector);
+    }
+
+    return results;
+  }, [countries, searchTerm, selectedRegion, selectedStatus, selectedSector]);
+
+  // ===== COUNT ACTIVE FILTERS =====
+  const activeFilterCount = [selectedRegion, selectedStatus, selectedSector, searchTerm].filter(f => f).length;
+
+  // ===== RESET FILTERS =====
+  const resetFilters = () => {
+    setSelectedRegion('');
+    setSelectedStatus('');
+    setSelectedSector('');
+    setSearchTerm('');
+  };
+
+  // ===== TOGGLE FILTER =====
+  const toggleFilterSidebar = () => {
+    setIsMobileFilterOpen(!isMobileFilterOpen);
+  };
+
+  // ===== FETCH COUNTRY DETAILS =====
+  const fetchCountryDetails = async (country) => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      const countryDetail = await apiService.getCountry(country.id);
+      const projectsResponse = await apiService.getCountryProjects(country.id);
+      const projects = projectsResponse.results || projectsResponse || [];
+      const pubsResponse = await apiService.getCountryPublications(country.id);
+      const publications = pubsResponse.results || pubsResponse || [];
+      const expertsResponse = await apiService.getCountryExperts(country.id);
+      const experts = expertsResponse.results || expertsResponse || [];
+      const organismsResponse = await apiService.getCountryOrganisms(country.id);
+      const organisms = organismsResponse.results || organismsResponse || [];
+
+      const enrichedData = {
+        id: country.id,
+        name: country.name,
+        flag: country.flag_emoji || '🌍',
+        capital: country.capital || 'N/A',
+        population: country.population || 'N/A',
+        code: country.code,
+        region: country.region_name,
+        metrics: {
+          projects: country.active_projects || projects.length,
+          cfts: country.confined_field_trials || 0,
+          publications: country.publications_count || publications.length,
+          institutions: country.institutions_count || 0,
+          researchers: country.researchers_trained || 0,
+          readiness: country.readiness_score || 0,
+          funding: country.funding_received || 0,
+          collaborations: country.international_alignment ? 1 : 0
+        },
+        trends: buildTrends(projects, publications),
+        focus: buildFocusAreas(projects),
+        projects: projects.slice(0, 5),
+        timeline: buildTimeline(countryDetail, projects),
+        regulatory: {
+          biosafety: getBiosafetyStatus(country.biosafety_status),
+          gedGuidelines: country.ged_guidelines || 'Not specified',
+          classification: country.classification_approach || 'Not specified',
+          lastUpdate: country.updated_at ? new Date(country.updated_at).getFullYear() : 'N/A',
+          status: getRegulatoryStatus(country.biosafety_status)
+        },
+        publications: publications.slice(0, 5),
+        experts: experts.slice(0, 5),
+        organisms: organisms.slice(0, 5)
+      };
+
+      setCountryData(enrichedData);
+    } catch (err) {
+      console.error('Error fetching country details:', err);
+      setError('Failed to load country details. Please try again.');
+    } finally {
+      setLoading(false);
     }
   };
 
-  // Add more countries with default data
-  const additionalCountries = [
-    "Uganda", "Tanzania", "Rwanda", "Zimbabwe", "Mozambique", "Zambia", 
-    "Malawi", "Burkina Faso", "Mali", "Senegal", "Côte d'Ivoire", "Cameroon"
-  ];
+  // ===== HELPER FUNCTIONS =====
+  const buildTrends = (projects, publications) => {
+    const years = ['2021', '2022', '2023', '2024', '2025', '2026'];
+    const projectCounts = years.map(year => 
+      projects.filter(p => p.start_year && p.start_year <= parseInt(year)).length
+    );
+    const pubCounts = years.map(year => 
+      publications.filter(p => p.year && p.year <= parseInt(year)).length
+    );
+    
+    return { years, projects: projectCounts, pubs: pubCounts };
+  };
 
-  additionalCountries.forEach(country => {
-    if (!countryProfiles[country]) {
-      countryProfiles[country] = {
-        name: country,
-        flag: "🌍",
-        capital: "Various",
-        population: "N/A",
-        metrics: { 
-          projects: Math.floor(Math.random() * 5) + 1, 
-          cfts: Math.floor(Math.random() * 3), 
-          publications: Math.floor(Math.random() * 10) + 1, 
-          institutions: Math.floor(Math.random() * 6) + 2, 
-          researchers: Math.floor(Math.random() * 50) + 10, 
-          readiness: 0.3 + Math.random() * 0.4,
-          funding: `$${(Math.random() * 3 + 0.5).toFixed(1)}M`,
-          collaborations: Math.floor(Math.random() * 10) + 2
-        },
-        trends: { 
-          years: ["2021", "2022", "2023", "2024", "2025", "2026"], 
-          projects: [0, 0, 1, 1, 2, Math.floor(Math.random() * 3) + 1], 
-          pubs: [0, 1, 2, 3, 4, Math.floor(Math.random() * 8) + 1],
-          funding: [0.1, 0.2, 0.4, 0.6, 0.9, (Math.random() * 3 + 0.5).toFixed(1)]
-        },
-        focus: { 
-          labels: ["Crop Improvement", "Capacity Building"], 
-          values: [75, 25] 
-        },
-        institutions: [
-          { name: `${country} Agricultural Research Institute`, type: "Research", focus: "Crop Improvement" },
-          { name: `${country} Biosafety Authority`, type: "Regulatory", focus: "Biosafety" },
-          { name: `${country} University - Biotechnology Dept`, type: "Academic", focus: "Research" }
-        ],
-        projects: [
-          { name: `${country} Crop Improvement Initiative`, status: "R&D", year: "2024-2027", lead: "National Institute" }
-        ],
-        timeline: [
-          { year: "2024", text: "Genome editing policy development initiated", type: "policy" },
-          { year: "2025", text: "Stakeholder capacity building underway", type: "milestone" }
-        ],
-        regulatory: { 
-          biosafety: "Developing", 
-          gedGuidelines: "None", 
-          classification: "Not specified",
-          lastUpdate: "2024",
-          status: "Emerging"
-        },
-        publications: []
-      };
+  const buildFocusAreas = (projects) => {
+    const focusMap = {};
+    projects.forEach(p => {
+      const sector = p.sector || 'Agriculture';
+      focusMap[sector] = (focusMap[sector] || 0) + 1;
+    });
+    
+    const labels = Object.keys(focusMap);
+    const values = Object.values(focusMap);
+    const total = values.reduce((a, b) => a + b, 0);
+    
+    if (total === 0) {
+      return { labels: ['Agriculture', 'Health', 'Capacity Building'], values: [60, 25, 15] };
     }
-  });
+    
+    return {
+      labels: labels.map(l => l.replace('_', ' ').toUpperCase()),
+      values: values.map(v => Math.round((v / total) * 100))
+    };
+  };
 
-  useEffect(() => {
-    setLoading(true);
-    setTimeout(() => {
-      setCountryData(countryProfiles[selectedCountry]);
-      setLoading(false);
-    }, 300);
-  }, [selectedCountry]);
+  const buildTimeline = (country, projects) => {
+    const timeline = [];
+    
+    if (country.biosafety_act_date) {
+      timeline.push({
+        year: new Date(country.biosafety_act_date).getFullYear().toString(),
+        text: 'Biosafety Act enacted',
+        type: 'policy'
+      });
+    }
+    
+    if (country.ged_guidelines_date) {
+      timeline.push({
+        year: new Date(country.ged_guidelines_date).getFullYear().toString(),
+        text: 'Genome Editing Guidelines adopted',
+        type: 'policy'
+      });
+    }
+    
+    projects.slice(0, 3).forEach(p => {
+      if (p.start_year) {
+        timeline.push({
+          year: p.start_year.toString(),
+          text: p.title,
+          type: 'project'
+        });
+      }
+    });
+    
+    timeline.sort((a, b) => parseInt(a.year) - parseInt(b.year));
+    
+    if (timeline.length === 0) {
+      return [
+        { year: '2022', text: 'Policy development initiated', type: 'policy' },
+        { year: '2024', text: 'Stakeholder engagement underway', type: 'milestone' }
+      ];
+    }
+    
+    return timeline;
+  };
 
+  const getBiosafetyStatus = (status) => {
+    const map = {
+      'functional': 'Functional Framework',
+      'draft': 'Draft Guidelines',
+      'development': 'Policy Development',
+      'none': 'No Specific Framework',
+      'under_review': 'Under Review'
+    };
+    return map[status] || 'Not specified';
+  };
+
+  const getRegulatoryStatus = (status) => {
+    const map = {
+      'functional': 'Active',
+      'implemented': 'Active',
+      'draft': 'In Development',
+      'development': 'In Development',
+      'under_review': 'Under Review',
+      'none': 'Not Started'
+    };
+    return map[status] || 'Not specified';
+  };
+
+  const getStatusClass = (status) => {
+    const map = { "cft": "status-cft", "rd": "status-rd", "commercial": "status-commercial", "planning": "status-rd" };
+    return map[status] || "status-rd";
+  };
+
+  const getTimelineTypeClass = (type) => {
+    const map = { "policy": "timeline-policy", "milestone": "timeline-milestone", "project": "timeline-project" };
+    return map[type] || "timeline-milestone";
+  };
+
+  const getReadinessLevel = (score) => {
+    if (score >= 0.7) return { level: 'Advanced', color: '#10B981', bg: 'rgba(16, 185, 129, 0.15)' };
+    if (score >= 0.55) return { level: 'Intermediate', color: '#F59E0B', bg: 'rgba(245, 158, 11, 0.15)' };
+    return { level: 'Foundational', color: '#EF4444', bg: 'rgba(239, 68, 68, 0.15)' };
+  };
+
+  // ===== CHART INITIALIZATION =====
   useEffect(() => {
     if (countryData && !loading) {
-      // Small delay to ensure DOM is ready
-      const timer = setTimeout(() => {
-        initializeCharts();
-      }, 100);
+      const timer = setTimeout(() => initializeCharts(), 100);
       return () => clearTimeout(timer);
     }
   }, [countryData, loading]);
 
   const destroyCharts = () => {
-    if (chartInstances.current.trend) {
-      chartInstances.current.trend.destroy();
-      chartInstances.current.trend = null;
-    }
-    if (chartInstances.current.focus) {
-      chartInstances.current.focus.destroy();
-      chartInstances.current.focus = null;
-    }
-    if (chartInstances.current.readiness) {
-      chartInstances.current.readiness.destroy();
-      chartInstances.current.readiness = null;
-    }
+    Object.keys(chartInstances.current).forEach(key => {
+      if (chartInstances.current[key]) {
+        chartInstances.current[key].destroy();
+        chartInstances.current[key] = null;
+      }
+    });
   };
 
   const initializeCharts = () => {
     if (!countryData) return;
-
     destroyCharts();
 
-    // Trend Chart
     const trendCtx = document.getElementById('trendChart');
     if (trendCtx) {
       chartInstances.current.trend = new Chart(trendCtx, {
@@ -433,7 +526,6 @@ const CountriesPage = ({ onBackClick }) => {
       });
     }
 
-    // Focus Chart
     const focusCtx = document.getElementById('focusChart');
     if (focusCtx) {
       chartInstances.current.focus = new Chart(focusCtx, {
@@ -458,15 +550,15 @@ const CountriesPage = ({ onBackClick }) => {
       });
     }
 
-    // Readiness Gauge Chart
     const readinessCtx = document.getElementById('readinessChart');
     if (readinessCtx) {
+      const readinessScore = countryData.metrics.readiness * 100;
       chartInstances.current.readiness = new Chart(readinessCtx, {
         type: 'doughnut',
         data: {
           labels: ['Readiness Score', 'Remaining'],
           datasets: [{ 
-            data: [countryData.metrics.readiness * 100, 100 - (countryData.metrics.readiness * 100)], 
+            data: [readinessScore, 100 - readinessScore], 
             backgroundColor: ['#2C6E49', '#E4E8EF'],
             borderWidth: 0
           }]
@@ -484,307 +576,475 @@ const CountriesPage = ({ onBackClick }) => {
     }
   };
 
-  const getReadinessLevel = (score) => {
-    if (score >= 0.7) return { level: 'Advanced', color: '#2C6E49', bg: '#E0F0EA' };
-    if (score >= 0.55) return { level: 'Intermediate', color: '#F57C00', bg: '#FFF3E0' };
-    return { level: 'Foundational', color: '#C62828', bg: '#FFEBEE' };
-  };
-
-  const getStatusClass = (status) => {
-    const map = { "CFT": "status-cft", "R&D": "status-rd", "Commercial": "status-commercial" };
-    return map[status] || "status-rd";
-  };
-
-  const getTimelineTypeClass = (type) => {
-    const map = { "policy": "timeline-policy", "milestone": "timeline-milestone", "project": "timeline-project" };
-    return map[type] || "timeline-milestone";
-  };
-
-  const filteredCountries = Object.keys(countryProfiles).filter(country =>
-    country.toLowerCase().includes(searchTerm.toLowerCase())
-  );
-
   const readiness = countryData ? getReadinessLevel(countryData.metrics.readiness) : { level: '', color: '', bg: '' };
+
+  // ===== LOADING STATE =====
+  if (loading && !countryData) {
+    return (
+      <div className="countries-page">
+        <div className="loading-container">
+          <div className="spinner"></div>
+          <p>Loading country data...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="countries-page">
-      {/* Header */}
+      {/* Back Button */}
+      <button className="back-to-home" onClick={onBackClick} aria-label="Back to home">
+        <i className="fas fa-arrow-left"></i>
+        <span>Back to Home</span>
+      </button>
+
+      {/* ===== HEADER ===== */}
       <header className="countries-header">
         <div className="container">
-          <div className="header-inner">
-            <div className="logo-area">
-              <img 
-                className="logo-img" 
-                src="https://www.nepad.org/sites/default/files/AUDA%2025TH%20ANNIVERSARY%20LOGO%20Lock%20up-01.png" 
-                alt="AUDA-NEPAD Logo" 
-                onError={(e) => e.target.src = 'https://placehold.co/120x50'}
-              />
-              <div className="logo-text">
-                <h2>Genome Editing Programme</h2>
-                <p>AUDA-NEPAD · Country Profiles</p>
-              </div>
+          <div className="header-content">
+            <div className="header-left">
+              <h1 className="page-title">
+                <span className="title-icon"><i className="fas fa-flag-checkered"></i></span>
+                <span className="title-text">Country Profile Dashboard</span>
+              </h1>
+              <p className="page-subtitle">
+                Comprehensive genome editing landscape data for African nations
+              </p>
             </div>
-            <div className="nav-links">
-              <button onClick={onBackClick} className="back-link">
-                <i className="fas fa-arrow-left"></i> Back to Home
+            <div className="header-right">
+              <button 
+                className={`filter-toggle-btn ${isMobileFilterOpen ? 'active' : ''}`}
+                onClick={toggleFilterSidebar}
+                aria-expanded={isMobileFilterOpen}
+                aria-label="Toggle filters"
+              >
+                <i className="fas fa-sliders-h"></i>
+                <span>Filters</span>
+                {activeFilterCount > 0 && (
+                  <span className="filter-badge">{activeFilterCount}</span>
+                )}
+                <i className={`fas fa-chevron-${isMobileFilterOpen ? 'up' : 'down'}`}></i>
               </button>
             </div>
           </div>
+
+          {/* ===== STATS ===== */}
+          {!loading && !error && countries.length > 0 && (
+            <div className="stats-grid">
+              <div className="stat-card">
+                <div className="stat-icon-wrapper">
+                  <i className="fas fa-globe-africa"></i>
+                </div>
+                <div className="stat-info">
+                  <span className="stat-number">{countries.length}</span>
+                  <span className="stat-label">Countries</span>
+                </div>
+              </div>
+              <div className="stat-card">
+                <div className="stat-icon-wrapper active">
+                  <i className="fas fa-flag"></i>
+                </div>
+                <div className="stat-info">
+                  <span className="stat-number">
+                    {countries.filter(c => c.biosafety_status === 'functional').length}
+                  </span>
+                  <span className="stat-label">Functional Frameworks</span>
+                </div>
+              </div>
+              <div className="stat-card">
+                <div className="stat-icon-wrapper cft">
+                  <i className="fas fa-flask"></i>
+                </div>
+                <div className="stat-info">
+                  <span className="stat-number">
+                    {countries.reduce((sum, c) => sum + (c.confined_field_trials || 0), 0)}
+                  </span>
+                  <span className="stat-label">Field Trials</span>
+                </div>
+              </div>
+              <div className="stat-card">
+                <div className="stat-icon-wrapper funding">
+                  <i className="fas fa-users"></i>
+                </div>
+                <div className="stat-info">
+                  <span className="stat-number">
+                    {countries.reduce((sum, c) => sum + (c.researchers_trained || 0), 0)}
+                  </span>
+                  <span className="stat-label">Researchers Trained</span>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </header>
 
-      {/* Hero Section */}
-      <div className="countries-hero">
-        <div className="container">
-          <div className="hero-badge">
-            <i className="fas fa-flag-checkered"></i> COUNTRY INTELLIGENCE
+      {/* ===== MAIN CONTENT ===== */}
+      <div className="container main-content">
+        {/* ===== FILTER SIDEBAR ===== */}
+        <aside className={`filter-sidebar ${isMobileFilterOpen ? 'open' : ''}`}>
+          <div className="filter-sidebar-header">
+            <h3>
+              <i className="fas fa-sliders-h"></i> Filters
+              {activeFilterCount > 0 && (
+                <span className="filter-count-badge">{activeFilterCount} active</span>
+              )}
+            </h3>
+            <button 
+              className="close-sidebar" 
+              onClick={() => setIsMobileFilterOpen(false)}
+              aria-label="Close filters"
+            >
+              <i className="fas fa-times"></i>
+            </button>
           </div>
-          <h1>Country Profile Dashboard</h1>
-          <p>Comprehensive genome editing landscape data for African nations.</p>
-        </div>
-      </div>
 
-      <div className="container">
-        {/* Country Selector */}
-        <div className="country-selector-enhanced">
-          <div className="selector-header">
-            <i className="fas fa-map-marker-alt"></i>
-            <span>Select Country:</span>
-          </div>
-          <div className="search-wrapper">
-            <i className="fas fa-search"></i>
-            <input 
-              type="text" 
-              placeholder="Search country..." 
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-            />
-          </div>
-          <select 
-            className="country-select-enhanced" 
-            value={selectedCountry}
-            onChange={(e) => setSelectedCountry(e.target.value)}
-          >
-            {filteredCountries.map(country => (
-              <option key={country} value={country}>
-                {countryProfiles[country]?.flag || '🌍'} {country}
-              </option>
-            ))}
-          </select>
-          <button className="export-btn" onClick={() => alert(`Exporting ${selectedCountry} Genome Editing Profile Report`)}>
-            <i className="fas fa-download"></i> Export Report
-          </button>
-        </div>
-
-        {loading ? (
-          <div className="loading-state">
-            <div className="loading-spinner"></div>
-            <p>Loading country data...</p>
-          </div>
-        ) : countryData && (
-          <>
-            {/* Country Header */}
-            <div className="country-header-card">
-              <div className="country-flag-large">
-                <span>{countryData.flag}</span>
-              </div>
-              <div className="country-info">
-                <h2>{countryData.name}</h2>
-                <div className="country-meta">
-                  <span><i className="fas fa-building"></i> Capital: {countryData.capital}</span>
-                  <span><i className="fas fa-users"></i> Population: {countryData.population}</span>
-                </div>
-                <div className="readiness-badge" style={{ background: readiness.bg, color: readiness.color }}>
-                  <i className="fas fa-chart-line"></i> Readiness: {readiness.level} ({(countryData.metrics.readiness * 100).toFixed(0)}%)
-                </div>
-              </div>
+          <div className="filter-sidebar-body">
+            {/* Search */}
+            <div className="filter-group">
+              <label className="filter-label" htmlFor="search-countries">
+                <i className="fas fa-search"></i> Search
+              </label>
+              <input
+                id="search-countries"
+                type="text"
+                placeholder="Search countries..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="filter-input"
+                aria-label="Search countries"
+              />
             </div>
 
-            {/* KPI Cards */}
-            <div className="kpi-grid">
-              <div className="kpi-card">
-                <div className="kpi-icon"><i className="fas fa-project-diagram"></i></div>
-                <div className="kpi-content">
-                  <div className="kpi-value">{countryData.metrics.projects}</div>
-                  <div className="kpi-label">Active Projects</div>
-                </div>
-              </div>
-              <div className="kpi-card">
-                <div className="kpi-icon"><i className="fas fa-flask"></i></div>
-                <div className="kpi-content">
-                  <div className="kpi-value">{countryData.metrics.cfts}</div>
-                  <div className="kpi-label">Confined Field Trials</div>
-                </div>
-              </div>
-              <div className="kpi-card">
-                <div className="kpi-icon"><i className="fas fa-file-alt"></i></div>
-                <div className="kpi-content">
-                  <div className="kpi-value">{countryData.metrics.publications}</div>
-                  <div className="kpi-label">Publications</div>
-                </div>
-              </div>
-              <div className="kpi-card">
-                <div className="kpi-icon"><i className="fas fa-university"></i></div>
-                <div className="kpi-content">
-                  <div className="kpi-value">{countryData.metrics.institutions}</div>
-                  <div className="kpi-label">Institutions</div>
-                </div>
-              </div>
-              <div className="kpi-card">
-                <div className="kpi-icon"><i className="fas fa-user-graduate"></i></div>
-                <div className="kpi-content">
-                  <div className="kpi-value">{countryData.metrics.researchers}</div>
-                  <div className="kpi-label">Researchers</div>
-                </div>
-              </div>
-              <div className="kpi-card">
-                <div className="kpi-icon"><i className="fas fa-dollar-sign"></i></div>
-                <div className="kpi-content">
-                  <div className="kpi-value">{countryData.metrics.funding}</div>
-                  <div className="kpi-label">Total Funding</div>
-                </div>
-              </div>
+            {/* Region */}
+            <div className="filter-group">
+              <SearchableDropdown
+                label="Region"
+                icon="fas fa-globe"
+                placeholder="Search regions..."
+                options={filterOptions.regions}
+                value={selectedRegion}
+                onChange={(value) => setSelectedRegion(value)}
+                showCounts={true}
+              />
             </div>
 
-            {/* Charts Row */}
-            <div className="charts-row">
-              <div className="chart-card">
-                <h3><i className="fas fa-chart-line"></i> Project & Publication Trends</h3>
-                <div className="chart-container">
-                  <canvas id="trendChart"></canvas>
-                </div>
-              </div>
-              <div className="chart-card">
-                <h3><i className="fas fa-chart-pie"></i> Research Focus Areas</h3>
-                <div className="chart-container">
-                  <canvas id="focusChart"></canvas>
-                </div>
-              </div>
-              <div className="chart-card">
-                <h3><i className="fas fa-tachometer-alt"></i> Readiness Score</h3>
-                <div className="gauge-container">
-                  <canvas id="readinessChart"></canvas>
-                  <div className="gauge-center">
-                    <span className="gauge-value">{Math.round(countryData.metrics.readiness * 100)}%</span>
-                    <span className="gauge-label">Ready</span>
-                  </div>
-                </div>
-              </div>
+            {/* Status */}
+            <div className="filter-group">
+              <SearchableDropdown
+                label="Regulatory Status"
+                icon="fas fa-gavel"
+                placeholder="Search status..."
+                options={filterOptions.statuses}
+                value={selectedStatus}
+                onChange={(value) => setSelectedStatus(value)}
+                showCounts={true}
+              />
             </div>
 
-            {/* Regulatory Framework */}
-            <div className="info-card">
-              <h3><i className="fas fa-gavel"></i> Regulatory Framework</h3>
-              <div className="regulatory-grid">
-                <div className="regulatory-item">
-                  <span className="reg-label">Biosafety Framework:</span>
-                  <span className="reg-value">{countryData.regulatory.biosafety}</span>
-                </div>
-                <div className="regulatory-item">
-                  <span className="reg-label">GEd Guidelines:</span>
-                  <span className="reg-value">{countryData.regulatory.gedGuidelines}</span>
-                </div>
-                <div className="regulatory-item">
-                  <span className="reg-label">Classification:</span>
-                  <span className="reg-value">{countryData.regulatory.classification}</span>
-                </div>
-                <div className="regulatory-item">
-                  <span className="reg-label">Last Update:</span>
-                  <span className="reg-value">{countryData.regulatory.lastUpdate}</span>
-                </div>
-                <div className="regulatory-item">
-                  <span className="reg-label">Status:</span>
-                  <span className={`reg-status ${countryData.regulatory.status === 'Active' ? 'active' : 'developing'}`}>
-                    {countryData.regulatory.status}
-                  </span>
-                </div>
-              </div>
+            {/* Sector */}
+            <div className="filter-group">
+              <SearchableDropdown
+                label="Sector"
+                icon="fas fa-industry"
+                placeholder="Search sectors..."
+                options={filterOptions.sectors}
+                value={selectedSector}
+                onChange={(value) => setSelectedSector(value)}
+                showCounts={true}
+              />
             </div>
 
-            {/* Key Projects */}
-            <div className="info-card">
-              <h3><i className="fas fa-microscope"></i> Key Projects</h3>
-              <div className="projects-list">
-                {countryData.projects.map((project, idx) => (
-                  <div key={idx} className="project-item">
-                    <div className="project-info">
-                      <div className="project-name">{project.name}</div>
-                      <div className="project-details">
-                        <span><i className="fas fa-calendar"></i> {project.year}</span>
-                        <span><i className="fas fa-building"></i> {project.lead}</span>
-                      </div>
+            <button 
+              className="reset-filters-btn" 
+              onClick={resetFilters}
+              aria-label="Reset all filters"
+            >
+              <i className="fas fa-undo"></i> Reset All Filters
+            </button>
+          </div>
+        </aside>
+
+        {/* ===== COUNTRY CONTENT ===== */}
+        <main className="countries-content">
+          <div className="results-header">
+            <div className="results-info">
+              <span className="results-count">
+                <strong>{filteredCountries.length}</strong> countries found
+              </span>
+              {activeFilterCount > 0 && (
+                <span className="active-filters-badge">
+                  <i className="fas fa-filter"></i>
+                  {activeFilterCount} filter{activeFilterCount > 1 ? 's' : ''} active
+                </span>
+              )}
+            </div>
+            <div className="results-actions">
+              <button 
+                className="view-toggle"
+                onClick={toggleFilterSidebar}
+                aria-expanded={isMobileFilterOpen}
+              >
+                <i className={`fas fa-${isMobileFilterOpen ? 'times' : 'sliders-h'}`}></i>
+                {isMobileFilterOpen ? 'Hide Filters' : 'Show Filters'}
+              </button>
+            </div>
+          </div>
+
+          {error ? (
+            <div className="error-message">
+              <i className="fas fa-exclamation-circle error-icon"></i>
+              <h3>Unable to load countries</h3>
+              <p>{error}</p>
+              <button onClick={() => window.location.reload()} className="btn-primary">
+                <i className="fas fa-redo"></i> Retry
+              </button>
+            </div>
+          ) : (
+            <>
+              {/* Country Selector */}
+              <div className="country-selector-enhanced">
+                <div className="selector-header">
+                  <i className="fas fa-map-marker-alt"></i>
+                  <span>Select Country:</span>
+                </div>
+                <select 
+                  className="country-select-enhanced" 
+                  value={selectedCountry?.id || ''}
+                  onChange={(e) => {
+                    const country = filteredCountries.find(c => c.id === parseInt(e.target.value));
+                    if (country) setSelectedCountry(country);
+                  }}
+                >
+                  {filteredCountries.map(country => (
+                    <option key={country.id} value={country.id}>
+                      {country.flag_emoji || '🌍'} {country.name}
+                    </option>
+                  ))}
+                </select>
+                <button className="export-btn" onClick={() => alert(`Exporting ${selectedCountry?.name} Genome Editing Profile Report`)}>
+                  <i className="fas fa-download"></i> Export Report
+                </button>
+              </div>
+
+              {loading ? (
+                <div className="loading-state">
+                  <div className="loading-spinner"></div>
+                  <p>Loading country data...</p>
+                </div>
+              ) : countryData && (
+                <>
+                  {/* Country Header */}
+                  <div className="country-header-card">
+                    <div className="country-flag-large">
+                      <span>{countryData.flag}</span>
                     </div>
-                    <span className={`project-status ${getStatusClass(project.status)}`}>{project.status}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Institutions */}
-            <div className="info-card">
-              <h3><i className="fas fa-building"></i> Key Institutions</h3>
-              <div className="institutions-grid">
-                {countryData.institutions.map((inst, idx) => (
-                  <div key={idx} className="institution-card-small">
-                    <div className="inst-icon"><i className="fas fa-university"></i></div>
-                    <div className="inst-info">
-                      <div className="inst-name">{inst.name}</div>
-                      <div className="inst-meta">
-                        <span className="inst-type">{inst.type}</span>
-                        <span className="inst-focus">{inst.focus}</span>
+                    <div className="country-info">
+                      <h2>{countryData.name}</h2>
+                      <div className="country-meta">
+                        <span><i className="fas fa-building"></i> Capital: {countryData.capital}</span>
+                        <span><i className="fas fa-users"></i> Population: {countryData.population}</span>
+                        <span><i className="fas fa-globe"></i> Region: {countryData.region}</span>
+                      </div>
+                      <div className="readiness-badge" style={{ background: readiness.bg, color: readiness.color }}>
+                        <i className="fas fa-chart-line"></i> Readiness: {readiness.level} ({(countryData.metrics.readiness * 100).toFixed(0)}%)
                       </div>
                     </div>
                   </div>
-                ))}
-              </div>
-            </div>
 
-            {/* Timeline */}
-            <div className="info-card">
-              <h3><i className="fas fa-history"></i> Regulatory & Policy Timeline</h3>
-              <div className="timeline-container">
-                {countryData.timeline.map((item, idx) => (
-                  <div key={idx} className={`timeline-item ${getTimelineTypeClass(item.type)}`}>
-                    <div className="timeline-year">{item.year}</div>
-                    <div className="timeline-dot"></div>
-                    <div className="timeline-content">
-                      <p>{item.text}</p>
+                  {/* KPI Cards */}
+                  <div className="kpi-grid">
+                    <div className="kpi-card">
+                      <div className="kpi-icon"><i className="fas fa-project-diagram"></i></div>
+                      <div className="kpi-content">
+                        <div className="kpi-value">{countryData.metrics.projects}</div>
+                        <div className="kpi-label">Active Projects</div>
+                      </div>
+                    </div>
+                    <div className="kpi-card">
+                      <div className="kpi-icon"><i className="fas fa-flask"></i></div>
+                      <div className="kpi-content">
+                        <div className="kpi-value">{countryData.metrics.cfts}</div>
+                        <div className="kpi-label">Field Trials</div>
+                      </div>
+                    </div>
+                    <div className="kpi-card">
+                      <div className="kpi-icon"><i className="fas fa-file-alt"></i></div>
+                      <div className="kpi-content">
+                        <div className="kpi-value">{countryData.metrics.publications}</div>
+                        <div className="kpi-label">Publications</div>
+                      </div>
+                    </div>
+                    <div className="kpi-card">
+                      <div className="kpi-icon"><i className="fas fa-university"></i></div>
+                      <div className="kpi-content">
+                        <div className="kpi-value">{countryData.metrics.institutions}</div>
+                        <div className="kpi-label">Institutions</div>
+                      </div>
+                    </div>
+                    <div className="kpi-card">
+                      <div className="kpi-icon"><i className="fas fa-user-graduate"></i></div>
+                      <div className="kpi-content">
+                        <div className="kpi-value">{countryData.metrics.researchers}</div>
+                        <div className="kpi-label">Researchers</div>
+                      </div>
+                    </div>
+                    <div className="kpi-card">
+                      <div className="kpi-icon"><i className="fas fa-coins"></i></div>
+                      <div className="kpi-content">
+                        <div className="kpi-value">${(countryData.metrics.funding || 0).toLocaleString()}</div>
+                        <div className="kpi-label">Total Funding</div>
+                      </div>
                     </div>
                   </div>
-                ))}
-              </div>
-            </div>
 
-            {/* Publications */}
-            {countryData.publications && countryData.publications.length > 0 && (
-              <div className="info-card">
-                <h3><i className="fas fa-file-alt"></i> Key Publications</h3>
-                <div className="publications-list">
-                  {countryData.publications.map((pub, idx) => (
-                    <div key={idx} className="publication-item">
-                      <div className="pub-icon"><i className="fas fa-file-pdf"></i></div>
-                      <div className="pub-info">
-                        <div className="pub-title">{pub.title}</div>
-                        <div className="pub-meta">
-                          <span>{pub.journal}</span>
-                          <span>{pub.year}</span>
-                          <span><i className="fas fa-quote-right"></i> {pub.citations} citations</span>
+                  {/* Charts Row */}
+                  <div className="charts-row">
+                    <div className="chart-card">
+                      <h3><i className="fas fa-chart-line"></i> Project & Publication Trends</h3>
+                      <div className="chart-container">
+                        <canvas id="trendChart"></canvas>
+                      </div>
+                    </div>
+                    <div className="chart-card">
+                      <h3><i className="fas fa-chart-pie"></i> Research Focus Areas</h3>
+                      <div className="chart-container">
+                        <canvas id="focusChart"></canvas>
+                      </div>
+                    </div>
+                    <div className="chart-card">
+                      <h3><i className="fas fa-tachometer-alt"></i> Readiness Score</h3>
+                      <div className="gauge-container">
+                        <canvas id="readinessChart"></canvas>
+                        <div className="gauge-center">
+                          <span className="gauge-value">{Math.round(countryData.metrics.readiness * 100)}%</span>
+                          <span className="gauge-label">Ready</span>
                         </div>
                       </div>
                     </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </>
-        )}
+                  </div>
+
+                  {/* Regulatory Framework */}
+                  <div className="info-card">
+                    <h3><i className="fas fa-gavel"></i> Regulatory Framework</h3>
+                    <div className="regulatory-grid">
+                      <div className="regulatory-item">
+                        <span className="reg-label">Biosafety Framework:</span>
+                        <span className="reg-value">{countryData.regulatory.biosafety}</span>
+                      </div>
+                      <div className="regulatory-item">
+                        <span className="reg-label">GEd Guidelines:</span>
+                        <span className="reg-value">{countryData.regulatory.gedGuidelines}</span>
+                      </div>
+                      <div className="regulatory-item">
+                        <span className="reg-label">Classification:</span>
+                        <span className="reg-value">{countryData.regulatory.classification}</span>
+                      </div>
+                      <div className="regulatory-item">
+                        <span className="reg-label">Last Update:</span>
+                        <span className="reg-value">{countryData.regulatory.lastUpdate}</span>
+                      </div>
+                      <div className="regulatory-item">
+                        <span className="reg-label">Status:</span>
+                        <span className={`reg-status ${countryData.regulatory.status === 'Active' ? 'active' : 'developing'}`}>
+                          {countryData.regulatory.status}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Key Projects */}
+                  {countryData.projects && countryData.projects.length > 0 && (
+                    <div className="info-card">
+                      <h3><i className="fas fa-microscope"></i> Key Projects</h3>
+                      <div className="projects-list">
+                        {countryData.projects.map((project, idx) => (
+                          <div key={idx} className="project-item">
+                            <div className="project-info">
+                              <div className="project-name">{project.title}</div>
+                              <div className="project-details">
+                                <span><i className="fas fa-calendar"></i> {project.start_year || 'N/A'}</span>
+                                <span><i className="fas fa-building"></i> {project.lead_institution_name || 'N/A'}</span>
+                              </div>
+                            </div>
+                            <span className={`project-status ${getStatusClass(project.status)}`}>
+                              {project.status?.toUpperCase() || 'N/A'}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Key Experts */}
+                  {countryData.experts && countryData.experts.length > 0 && (
+                    <div className="info-card">
+                      <h3><i className="fas fa-users"></i> Key Experts</h3>
+                      <div className="experts-list">
+                        {countryData.experts.map((expert, idx) => (
+                          <div key={idx} className="expert-item">
+                            <div className="expert-icon"><i className="fas fa-user-circle"></i></div>
+                            <div className="expert-info">
+                              <div className="expert-name">{expert.name}</div>
+                              <div className="expert-meta">
+                                <span>{expert.title || 'Researcher'}</span>
+                                <span>{expert.institution_name || 'N/A'}</span>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Key Publications */}
+                  {countryData.publications && countryData.publications.length > 0 && (
+                    <div className="info-card">
+                      <h3><i className="fas fa-file-alt"></i> Key Publications</h3>
+                      <div className="publications-list">
+                        {countryData.publications.map((pub, idx) => (
+                          <div key={idx} className="publication-item">
+                            <div className="pub-icon"><i className="fas fa-file-pdf"></i></div>
+                            <div className="pub-info">
+                              <div className="pub-title">{pub.title}</div>
+                              <div className="pub-meta">
+                                <span>{pub.journal || 'N/A'}</span>
+                                <span>{pub.year || 'N/A'}</span>
+                                <span><i className="fas fa-quote-right"></i> {pub.citations || 0} citations</span>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Timeline */}
+                  <div className="info-card">
+                    <h3><i className="fas fa-history"></i> Regulatory & Policy Timeline</h3>
+                    <div className="timeline-container">
+                      {countryData.timeline.map((item, idx) => (
+                        <div key={idx} className={`timeline-item ${getTimelineTypeClass(item.type)}`}>
+                          <div className="timeline-year">{item.year}</div>
+                          <div className="timeline-dot"></div>
+                          <div className="timeline-content">
+                            <p>{item.text}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </>
+              )}
+            </>
+          )}
+        </main>
       </div>
 
-      {/* Footer */}
+      {/* ===== FOOTER ===== */}
       <footer className="countries-footer">
         <div className="container">
           <div className="footer-content">
-            <p>© 2026 AUDA-NEPAD Genome Editing Programme — Data updated quarterly.</p>
+            <p>© {new Date().getFullYear()} AUDA-NEPAD Genome Editing Programme — Data updated quarterly.</p>
             <button onClick={onBackClick} className="footer-back-btn">
               <i className="fas fa-home"></i> Back to Home
             </button>

@@ -1,570 +1,931 @@
-import React, { useState, useEffect } from 'react';
+// pages/InfrastructurePage.jsx
+
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useData } from '../context/DataContext';
+import apiService from '../services/apiService';
 import './InfrastructurePage.css';
 
-const InfrastructurePage = ({ onBackClick }) => {
-  const [facilities, setFacilities] = useState([]);
-  const [equipmentCategories, setEquipmentCategories] = useState([]);
-  const [trainingCenters, setTrainingCenters] = useState([]);
-  const [selectedFacility, setSelectedFacility] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState('all');
+// ============================================
+// SEARCHABLE DROPDOWN COMPONENT
+// ============================================
+const SearchableDropdown = ({ 
+  options = [], 
+  value = '', 
+  onChange, 
+  placeholder = 'Search...', 
+  label = '', 
+  icon = null,
+  showCounts = true,
+  disabled = false,
+  compact = false
+}) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const dropdownRef = useRef(null);
 
-  // Facilities Data
-  const facilitiesData = [
-    { 
-      id: 1, 
-      name: "KALRO Biotechnology Laboratory", 
-      country: "Kenya", 
-      city: "Nairobi", 
-      region: "East Africa",
-      status: "Operational", 
-      statusClass: "status-operational", 
-      description: "National agricultural research laboratory equipped for CRISPR-Cas9 applications in maize, cassava, and sorghum improvement. Features BSL-2+ containment and tissue culture facilities.", 
-      fullDescription: "The KALRO Biotechnology Laboratory is Kenya's premier agricultural biotechnology research facility. Established with support from AUDA-NEPAD and international partners, this state-of-the-art laboratory specializes in CRISPR-Cas9 genome editing for staple crops. The facility features BSL-2+ containment, tissue culture suites, and advanced molecular biology equipment. It serves as a regional training hub for East African scientists.",
-      equipment: ["CRISPR-Cas9 Workstation", "qPCR System", "Gene Gun", "Microinjector", "Growth Chambers", "Next-Generation Sequencer"], 
-      focus: ["Maize", "Cassava", "Drought Tolerance", "Pest Resistance"],
-      established: 2018,
-      capacity: "50 researchers",
-      funding: "$3.2M",
-      collaborations: ["CIMMYT", "IITA", "University of Nairobi"]
-    },
-    { 
-      id: 2, 
-      name: "IITA Bioscience Platform", 
-      country: "Nigeria", 
-      city: "Ibadan", 
-      region: "West Africa",
-      status: "Operational", 
-      statusClass: "status-operational", 
-      description: "Advanced molecular biology laboratory supporting genome editing research for cassava, yam, and cowpea. Core facility for West African research network.", 
-      fullDescription: "The IITA Bioscience Platform is a cutting-edge research facility serving West Africa's agricultural biotechnology community. The laboratory specializes in developing CRISPR-edited crops with enhanced disease resistance and nutritional profiles. It houses a CRISPR library, high-throughput sequencing platform, and protoplast transfection systems.",
-      equipment: ["CRISPR Library", "Sequencing Platform", "Protoplast Transfection System", "Confocal Microscope", "High-Performance Computing"], 
-      focus: ["Cassava", "Yam", "Viral Resistance", "Biofortification"],
-      established: 2015,
-      capacity: "75 researchers",
-      funding: "$5.1M",
-      collaborations: ["CGIAR", "Cornell University", "NABDA"]
-    },
-    { 
-      id: 3, 
-      name: "ARC Biotechnology Platform", 
-      country: "South Africa", 
-      city: "Pretoria", 
-      region: "Southern Africa",
-      status: "Operational", 
-      statusClass: "status-operational", 
-      description: "National reference laboratory for genome editing in agriculture. Houses specialized equipment for SDN-1, SDN-2, and SDN-3 applications.", 
-      fullDescription: "The Agricultural Research Council's Biotechnology Platform is South Africa's national reference laboratory for agricultural genome editing. The facility has pioneered the commercial release of gene-edited sorghum in Africa. It features specialized equipment for SDN-1, SDN-2, and SDN-3 applications, including robotic CRISPR-Cas9 systems and high-throughput phenotyping platforms.",
-      equipment: ["RainDrop Digital PCR", "CRISPR-Cas9 Robotic System", "Phenotyping Platform", "High-throughput Sequencing", "Greenhouse Complex"], 
-      focus: ["Sorghum", "Maize", "Commercial Release", "Drought Tolerance"],
-      established: 2010,
-      capacity: "100 researchers",
-      funding: "$8.5M",
-      collaborations: ["Seed Co", "DALRRD", "Stellenbosch University"]
-    },
-    { 
-      id: 4, 
-      name: "CSIR-SARI Genome Editing Lab", 
-      country: "Ghana", 
-      city: "Tamale", 
-      region: "West Africa",
-      status: "Operational", 
-      statusClass: "status-operational", 
-      description: "Specialized laboratory for cowpea and maize genome editing focusing on pest and disease resistance.", 
-      fullDescription: "The CSIR-Savanna Agricultural Research Institute's Genome Editing Laboratory focuses on developing pest and disease-resistant varieties of cowpea and maize. The facility has successfully conducted confined field trials for pod borer-resistant cowpea and is expanding its research to other staple crops.",
-      equipment: ["CRISPR-Cas9 System", "Electroporator", "Real-time PCR", "Plant Growth Facilities", "Insectary"], 
-      focus: ["Cowpea", "Maize", "Pest Resistance", "Pod Borer"],
-      established: 2019,
-      capacity: "30 researchers",
-      funding: "$2.1M",
-      collaborations: ["AATF", "University of Ghana", "AGRA"]
-    },
-    { 
-      id: 5, 
-      name: "EIAR Molecular Biology Center", 
-      country: "Ethiopia", 
-      city: "Addis Ababa", 
-      region: "East Africa",
-      status: "Developing", 
-      statusClass: "status-developing", 
-      description: "Emerging center for TALENs and CRISPR research on teff and other indigenous crops. Equipment installation phase.", 
-      fullDescription: "The Ethiopian Institute of Agricultural Research's Molecular Biology Center is an emerging facility focused on improving indigenous crops using TALENs and CRISPR technologies. Currently in the equipment installation phase, the center will specialize in teff improvement for lodging resistance and drought tolerance.",
-      equipment: ["TALENs Toolkit", "Basic PCR", "Gel Documentation", "Growth Chamber", "Microscopy Suite"], 
-      focus: ["Teff", "Drought Tolerance", "Indigenous Crops", "Lodging Resistance"],
-      established: 2021,
-      capacity: "20 researchers",
-      funding: "$1.5M",
-      collaborations: ["Addis Ababa University", "EIAR", "JIRCAS"]
-    },
-    { 
-      id: 6, 
-      name: "KEMRI-Wellcome Trust Research Programme", 
-      country: "Kenya", 
-      city: "Kilifi", 
-      region: "East Africa",
-      status: "Operational", 
-      statusClass: "status-operational", 
-      description: "Biomedical research facility conducting CRISPR-based gene therapy research for sickle cell disease and infectious diseases.", 
-      fullDescription: "The KEMRI-Wellcome Trust Research Programme is a leading biomedical research facility in East Africa. The laboratory conducts cutting-edge CRISPR-based gene therapy research for sickle cell disease, HIV, and other infectious diseases. It features BSL-3 containment and single-cell sequencing capabilities.",
-      equipment: ["CRISPR-Cas9 Gene Editing Platform", "Flow Cytometer", "Single-cell Sequencer", "BSL-3 Suite", "Cryopreservation"], 
-      focus: ["Gene Therapy", "Sickle Cell", "HIV", "Infectious Diseases"],
-      established: 1989,
-      capacity: "150 researchers",
-      funding: "$12.5M",
-      collaborations: ["University of Oxford", "NIH", "Wellcome Trust"]
-    },
-    { 
-      id: 7, 
-      name: "RABI Genome Editing Core Facility", 
-      country: "Nigeria", 
-      city: "Kano", 
-      region: "West Africa",
-      status: "Planned", 
-      statusClass: "status-planned", 
-      description: "Planned regional center of excellence for genome editing research in West Africa. Construction phase.", 
-      fullDescription: "The Regional Agricultural Biotechnology Institute's Genome Editing Core Facility is a planned center of excellence for West Africa. Once completed, it will serve as a regional hub for genome editing research, training, and technology transfer, with a focus on staple crops and capacity building.",
-      equipment: ["CRISPR Workstation", "Sequencing Core", "Bioinformatics Server", "Training Lab", "Greenhouse"], 
-      focus: ["Capacity Building", "Regional Hub", "Training", "Technology Transfer"],
-      established: 2024,
-      capacity: "40 researchers",
-      funding: "$4.0M",
-      collaborations: ["AUDA-NEPAD", "World Bank", "FAO"]
-    }
-  ];
+  const filteredOptions = (options || []).filter(opt => {
+    if (!opt) return false;
+    const labelStr = opt.label?.toString()?.toLowerCase() || '';
+    const searchStr = searchTerm?.toString()?.toLowerCase() || '';
+    return labelStr.includes(searchStr);
+  });
 
-  // Equipment Categories Data
-  const equipmentData = [
-    { 
-      name: "CRISPR & Genome Editing Systems", 
-      icon: "fas fa-dna",
-      items: [
-        { name: "CRISPR-Cas9 Workstations", count: 22 },
-        { name: "TALENs Kits", count: 15 },
-        { name: "Electroporators", count: 18 },
-        { name: "Microinjectors", count: 12 },
-        { name: "Gene Guns", count: 8 },
-        { name: "CRISPR Library Systems", count: 10 }
-      ] 
-    },
-    { 
-      name: "Molecular Analysis & Detection", 
-      icon: "fas fa-chart-line",
-      items: [
-        { name: "Real-time PCR Systems", count: 45 },
-        { name: "Digital PCR", count: 12 },
-        { name: "Sequencing Platforms", count: 20 },
-        { name: "Gel Documentation", count: 38 },
-        { name: "Spectrophotometers", count: 52 },
-        { name: "NanoDrop Systems", count: 30 }
-      ] 
-    },
-    { 
-      name: "Microscopy & Imaging", 
-      icon: "fas fa-microscope",
-      items: [
-        { name: "Confocal Microscopes", count: 10 },
-        { name: "Fluorescence Microscopes", count: 25 },
-        { name: "Electron Microscopes", count: 5 },
-        { name: "High-content Imagers", count: 8 },
-        { name: "Live-cell Imaging", count: 12 }
-      ] 
-    },
-    { 
-      name: "Sample Preparation & Culture", 
-      icon: "fas fa-vial",
-      items: [
-        { name: "Biosafety Cabinets", count: 120 },
-        { name: "CO2 Incubators", count: 95 },
-        { name: "Centrifuges", count: 150 },
-        { name: "Cryostorage Systems", count: 35 },
-        { name: "Tissue Culture Hoods", count: 42 },
-        { name: "Autoclaves", count: 28 }
-      ] 
-    },
-    { 
-      name: "Phenotyping & Growth Facilities", 
-      icon: "fas fa-seedling",
-      items: [
-        { name: "Controlled Growth Chambers", count: 65 },
-        { name: "Greenhouses", count: 28 },
-        { name: "Phenotyping Platforms", count: 15 },
-        { name: "Hydroponic Systems", count: 20 },
-        { name: "Field Trial Stations", count: 45 }
-      ] 
-    },
-    { 
-      name: "Bioinformatics & Computing", 
-      icon: "fas fa-server",
-      items: [
-        { name: "High-performance Clusters", count: 8 },
-        { name: "Genome Assembly Servers", count: 12 },
-        { name: "Data Storage Systems", count: 25 },
-        { name: "Bioinformatics Workstations", count: 40 },
-        { name: "Cloud Computing Platforms", count: 5 }
-      ] 
-    }
-  ];
-
-  // Training Centers Data
-  const trainingData = [
-    { 
-      id: 1,
-      name: "AUDA-NEPAD ABNE Training Hub", 
-      country: "Kenya", 
-      city: "Nairobi",
-      region: "East Africa",
-      focus: "Regulatory training, risk assessment, biosafety", 
-      programs: ["GEd Regulators Course", "Risk Assessment Workshop", "Policy Development", "Stakeholder Engagement"],
-      capacity: "500+ trainees annually",
-      established: 2015,
-      description: "The African Biosafety Network of Expertise Training Hub provides comprehensive regulatory training for biosafety professionals across Africa."
-    },
-    { 
-      id: 2,
-      name: "African Centre for Gene Technologies", 
-      country: "South Africa", 
-      city: "Pretoria",
-      region: "Southern Africa",
-      focus: "CRISPR techniques, bioinformatics, molecular biology", 
-      programs: ["CRISPR Bootcamp", "Bioinformatics for GEd", "Advanced Molecular Biology", "Gene Editing Design"],
-      capacity: "300+ trainees annually",
-      established: 2012,
-      description: "A leading center for advanced training in genome editing technologies and bioinformatics applications."
-    },
-    { 
-      id: 3,
-      name: "WACCI - University of Ghana", 
-      country: "Ghana", 
-      city: "Accra",
-      region: "West Africa",
-      focus: "Plant genome editing, crop improvement", 
-      programs: ["Plant CRISPR Workshop", "Gene Editing for Breeders", "Molecular Markers", "Tissue Culture"],
-      capacity: "200+ trainees annually",
-      established: 2010,
-      description: "West Africa's premier center for plant breeding and genome editing training."
-    },
-    { 
-      id: 4,
-      name: "Pan-African Bioinformatics Institute", 
-      country: "Kenya", 
-      city: "Nairobi",
-      region: "East Africa",
-      focus: "Computational genomics, gRNA design, data science", 
-      programs: ["CRISPR Design & Analysis", "Genome Assembly", "Data Science for Biologists", "Machine Learning in Genomics"],
-      capacity: "400+ trainees annually",
-      established: 2018,
-      description: "Specialized institute for bioinformatics training with focus on genome editing applications."
-    },
-    { 
-      id: 5,
-      name: "RABI Genome Editing Academy", 
-      country: "Nigeria", 
-      city: "Kano",
-      region: "West Africa",
-      focus: "Cassava improvement, molecular breeding", 
-      programs: ["Cassava CRISPR Workshop", "Gene Editing Fundamentals", "Lab Techniques", "Field Trial Management"],
-      capacity: "150+ trainees annually",
-      established: 2020,
-      description: "Specialized training center focused on applying genome editing to cassava improvement."
-    }
-  ];
+  const selectedOption = (options || []).find(opt => {
+    if (!opt) return false;
+    const optValue = opt.value?.toString() || '';
+    const currentValue = value?.toString() || '';
+    return optValue === currentValue;
+  });
 
   useEffect(() => {
-    setLoading(true);
-    setTimeout(() => {
-      setFacilities(facilitiesData);
-      setEquipmentCategories(equipmentData);
-      setTrainingCenters(trainingData);
-      setLoading(false);
-    }, 500);
+    const handleClickOutside = (event) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const getFilteredFacilities = () => {
-    if (filter === 'all') return facilities;
-    return facilities.filter(f => f.status.toLowerCase() === filter.toLowerCase());
+  useEffect(() => {
+    const handleEscape = (e) => {
+      if (e.key === 'Escape') setIsOpen(false);
+    };
+    document.addEventListener('keydown', handleEscape);
+    return () => document.removeEventListener('keydown', handleEscape);
+  }, []);
+
+  const handleSelect = (option) => {
+    onChange(option?.value || '');
+    setIsOpen(false);
+    setSearchTerm('');
   };
 
-  const stats = {
-    laboratories: facilities.length,
-    bsl2: facilities.filter(f => f.status === "Operational").length,
-    crisprLabs: facilities.filter(f => f.focus.some(focus => focus.includes("CRISPR"))).length,
-    trainingCenters: trainingData.length
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter' && filteredOptions.length > 0) {
+      handleSelect(filteredOptions[0]);
+    }
   };
+
+  const displayValue = selectedOption?.label?.toString() || '';
+
+  return (
+    <div className={`searchable-dropdown ${compact ? 'compact' : ''}`} ref={dropdownRef}>
+      <div className="dropdown-label">
+        {icon && <i className={icon}></i>}
+        <span>{label}</span>
+        {selectedOption && !isOpen && (
+          <span className="dropdown-selected-value">{displayValue}</span>
+        )}
+      </div>
+      <div 
+        className={`dropdown-input-wrapper ${isOpen ? 'focused' : ''} ${disabled ? 'disabled' : ''}`}
+        onClick={() => !disabled && setIsOpen(!isOpen)}
+        role="combobox"
+        aria-expanded={isOpen}
+        aria-haspopup="listbox"
+      >
+        <input
+          type="text"
+          placeholder={placeholder}
+          value={isOpen ? searchTerm : displayValue}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          onFocus={() => !disabled && setIsOpen(true)}
+          onKeyDown={handleKeyDown}
+          className="dropdown-input"
+          disabled={disabled}
+          readOnly={!isOpen}
+          aria-label={`Search ${label}`}
+          autoComplete="off"
+        />
+        <i className={`fas fa-chevron-${isOpen ? 'up' : 'down'} dropdown-arrow`}></i>
+        {selectedOption && !isOpen && value && (
+          <button 
+            className="dropdown-clear"
+            onClick={(e) => {
+              e.stopPropagation();
+              onChange('');
+            }}
+            aria-label={`Clear ${label} filter`}
+          >
+            <i className="fas fa-times-circle"></i>
+          </button>
+        )}
+      </div>
+      {isOpen && (
+        <div className="dropdown-options" role="listbox">
+          <div 
+            className={`dropdown-option all-option ${!value ? 'selected' : ''}`} 
+            onClick={() => handleSelect({ value: '' })}
+            role="option"
+            aria-selected={!value}
+          >
+            <span>All {label}</span>
+            {!value && <i className="fas fa-check option-check"></i>}
+          </div>
+          {filteredOptions.length === 0 ? (
+            <div className="dropdown-no-results">No options found</div>
+          ) : (
+            filteredOptions.map((option, index) => {
+              const isSelected = value?.toString() === option.value?.toString();
+              const optionKey = option.value?.toString() || `option-${index}`;
+              return (
+                <div
+                  key={optionKey}
+                  className={`dropdown-option ${isSelected ? 'selected' : ''}`}
+                  onClick={() => handleSelect(option)}
+                  role="option"
+                  aria-selected={isSelected}
+                >
+                  {option.color && <span className="status-color-dot" style={{ backgroundColor: option.color }}></span>}
+                  <span>{option.label?.toString() || 'Unknown'}</span>
+                  {showCounts && option.count !== undefined && (
+                    <span className="option-count">{option.count}</span>
+                  )}
+                  {isSelected && (
+                    <i className="fas fa-check option-check"></i>
+                  )}
+                </div>
+              );
+            })
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ============================================
+// MAIN INFRASTRUCTURE COMPONENT
+// ============================================
+const InfrastructurePage = ({ onBackClick }) => {
+  const { countries } = useData();
+  const [facilities, setFacilities] = useState([]);
+  const [filteredFacilities, setFilteredFacilities] = useState([]);
+  const [selectedFacility, setSelectedFacility] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [isFilterOpen, setIsFilterOpen] = useState(false);
+  const [isMobileFilterOpen, setIsMobileFilterOpen] = useState(false);
+  const [viewMode, setViewMode] = useState('grid'); // 'grid' | 'list'
+  
+  // Filter states
+  const [selectedBiosafetyLevel, setSelectedBiosafetyLevel] = useState('');
+  const [selectedCountry, setSelectedCountry] = useState('');
+  const [selectedOrganisation, setSelectedOrganisation] = useState('');
+  const [selectedStatus, setSelectedStatus] = useState('');
+  const [selectedEquipmentType, setSelectedEquipmentType] = useState('');
+  const [searchTerm, setSearchTerm] = useState('');
+  
+  const [filterOptions, setFilterOptions] = useState({
+    biosafetyLevels: [],
+    countries: [],
+    organisations: [],
+    statuses: [],
+    equipmentTypes: []
+  });
+  
+  const [stats, setStats] = useState({
+    total: 0,
+    fullyEquipped: 0,
+    partiallyEquipped: 0,
+    operational: 0,
+    developing: 0
+  });
+
+  // Status color mapping
+  const statusColors = {
+    'fully_equipped': '#10B981',
+    'operational': '#10B981',
+    'partially_equipped': '#F59E0B',
+    'not-fully_equipped': '#F59E0B',
+    'developing': '#3B82F6',
+    'under_construction': '#8B5CF6',
+    'planned': '#6B7280',
+    'needs_upgrade': '#EF4444'
+  };
+
+  const statusIcons = {
+    'fully_equipped': 'fa-check-circle',
+    'operational': 'fa-check-circle',
+    'partially_equipped': 'fa-exclamation-triangle',
+    'not-fully_equipped': 'fa-exclamation-triangle',
+    'developing': 'fa-chart-line',
+    'under_construction': 'fa-hard-hat',
+    'planned': 'fa-clock',
+    'needs_upgrade': 'fa-tools'
+  };
+
+  const biosafetyLevelColors = {
+    'bsl1': '#10B981',
+    'bsl2': '#3B82F6',
+    'bsl3': '#F59E0B',
+    'bsl4': '#EF4444',
+    'none': '#6B7280'
+  };
+
+  const getStatusDisplay = (status) => {
+    const map = {
+      'fully_equipped': 'Fully Equipped',
+      'operational': 'Operational',
+      'partially_equipped': 'Partially Equipped',
+      'not-fully_equipped': 'Not Fully Equipped',
+      'developing': 'Developing',
+      'under_construction': 'Under Construction',
+      'planned': 'Planned',
+      'needs_upgrade': 'Needs Upgrade'
+    };
+    return map[status] || status;
+  };
+
+  const getBiosafetyLevelDisplay = (level) => {
+    const map = {
+      'bsl1': 'BSL-1',
+      'bsl2': 'BSL-2',
+      'bsl3': 'BSL-3',
+      'bsl4': 'BSL-4',
+      'none': 'Not Specified'
+    };
+    return map[level] || level?.toUpperCase() || 'Not Specified';
+  };
+
+  // ===== VIEW MODE HANDLER =====
+  const toggleViewMode = (mode) => {
+    setViewMode(mode);
+  };
+
+  // ===== FETCH FACILITIES =====
+  const fetchFacilities = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      const facilitiesResponse = await apiService.getLaboratoryFacilities({ limit: 100 });
+      let facilitiesData = facilitiesResponse.results || facilitiesResponse || [];
+
+      const institutionsResponse = await apiService.getInstitutions({ limit: 100 });
+      const institutionsData = institutionsResponse.results || institutionsResponse || [];
+
+      setFacilities(facilitiesData);
+      setFilteredFacilities(facilitiesData);
+
+      // Build filter options
+      const biosafetyLevelsSet = new Set();
+      facilitiesData.forEach(f => {
+        if (f.biosafety_level && Array.isArray(f.biosafety_level)) {
+          f.biosafety_level.forEach(level => {
+            if (level) biosafetyLevelsSet.add(level);
+          });
+        }
+      });
+      const biosafetyLevels = [...biosafetyLevelsSet].map(level => ({
+        value: level,
+        label: getBiosafetyLevelDisplay(level),
+        count: facilitiesData.filter(f => 
+          f.biosafety_level && f.biosafety_level.includes(level)
+        ).length,
+        color: biosafetyLevelColors[level] || '#6B7280'
+      }));
+
+      const countrySet = new Set();
+      facilitiesData.forEach(f => {
+        if (f.country_name) {
+          countrySet.add(f.country_name);
+        }
+      });
+      const countriesList = [...countrySet].sort().map(countryName => ({
+        value: countryName,
+        label: countryName,
+        count: facilitiesData.filter(f => f.country_name === countryName).length
+      }));
+
+      const organisations = institutionsData.map(inst => ({
+        value: inst.id,
+        label: inst.name,
+        count: facilitiesData.filter(f => f.institution === inst.id).length
+      }));
+
+      const statuses = [...new Set(facilitiesData.map(f => f.status))].map(status => ({
+        value: status,
+        label: getStatusDisplay(status),
+        count: facilitiesData.filter(f => f.status === status).length,
+        color: statusColors[status] || '#6B7280'
+      }));
+
+      const equipmentTypesSet = new Set();
+      facilitiesData.forEach(f => {
+        if (f.equipment_list && Array.isArray(f.equipment_list)) {
+          f.equipment_list.forEach(eq => {
+            if (eq) equipmentTypesSet.add(eq);
+          });
+        }
+      });
+      const equipmentTypes = [...equipmentTypesSet].map(type => ({
+        value: type,
+        label: type,
+        count: facilitiesData.filter(f => 
+          f.equipment_list && f.equipment_list.includes(type)
+        ).length
+      }));
+
+      setFilterOptions({
+        biosafetyLevels,
+        countries: countriesList,
+        organisations,
+        statuses,
+        equipmentTypes
+      });
+
+      const fullyEquipped = facilitiesData.filter(f => f.status === 'fully_equipped').length;
+      const partiallyEquipped = facilitiesData.filter(f => 
+        f.status === 'partially_equipped' || f.status === 'not-fully_equipped'
+      ).length;
+      const operational = facilitiesData.filter(f => 
+        f.status === 'operational' || f.status === 'fully_equipped'
+      ).length;
+      const developing = facilitiesData.filter(f => 
+        f.status === 'developing' || f.status === 'under_construction'
+      ).length;
+
+      setStats({
+        total: facilitiesData.length,
+        fullyEquipped,
+        partiallyEquipped,
+        operational,
+        developing
+      });
+
+    } catch (err) {
+      console.error('Error fetching facilities:', err);
+      setError(err.message || 'Failed to load infrastructure data.');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // ===== FETCH ON MOUNT =====
+  useEffect(() => {
+    fetchFacilities();
+  }, [fetchFacilities]);
+
+  // ===== FILTER FACILITIES =====
+  const filterFacilities = useCallback(() => {
+    let filtered = [...facilities];
+
+    if (selectedBiosafetyLevel) {
+      filtered = filtered.filter(f => 
+        f.biosafety_level && f.biosafety_level.includes(selectedBiosafetyLevel)
+      );
+    }
+
+    if (selectedCountry) {
+      filtered = filtered.filter(f => f.country_name === selectedCountry);
+    }
+
+    if (selectedOrganisation) {
+      filtered = filtered.filter(f => f.institution === parseInt(selectedOrganisation));
+    }
+
+    if (selectedStatus) {
+      filtered = filtered.filter(f => f.status === selectedStatus);
+    }
+
+    if (selectedEquipmentType) {
+      filtered = filtered.filter(f => 
+        f.equipment_list && f.equipment_list.includes(selectedEquipmentType)
+      );
+    }
+
+    if (searchTerm) {
+      const term = searchTerm.toLowerCase();
+      filtered = filtered.filter(f =>
+        f.name?.toLowerCase().includes(term) ||
+        f.institution_name?.toLowerCase().includes(term) ||
+        f.country_name?.toLowerCase().includes(term) ||
+        f.description?.toLowerCase().includes(term) ||
+        f.facility_type?.toLowerCase().includes(term)
+      );
+    }
+
+    setFilteredFacilities(filtered);
+  }, [facilities, selectedBiosafetyLevel, selectedCountry, selectedOrganisation, selectedStatus, selectedEquipmentType, searchTerm]);
+
+  useEffect(() => {
+    filterFacilities();
+  }, [filterFacilities]);
+
+  // ===== RESET FILTERS =====
+  const resetFilters = () => {
+    setSelectedBiosafetyLevel('');
+    setSelectedCountry('');
+    setSelectedOrganisation('');
+    setSelectedStatus('');
+    setSelectedEquipmentType('');
+    setSearchTerm('');
+  };
+
+  // ===== COUNT ACTIVE FILTERS =====
+  const activeFilterCount = [
+    selectedBiosafetyLevel, 
+    selectedCountry, 
+    selectedOrganisation, 
+    selectedStatus, 
+    selectedEquipmentType,
+    searchTerm
+  ].filter(f => f).length;
+
+  // ===== TOGGLE FILTER =====
+  const toggleFilterSidebar = () => {
+    setIsMobileFilterOpen(!isMobileFilterOpen);
+  };
+
+  // ===== LOADING STATE =====
+  if (loading && !facilities.length) {
+    return (
+      <div className="infrastructure-page">
+        <div className="loading-container">
+          <div className="spinner"></div>
+          <p>Loading infrastructure data...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="infrastructure-page">
-      {/* Header */}
+      {/* Back Button */}
+      <button className="back-to-home" onClick={onBackClick} aria-label="Back to home">
+        <i className="fas fa-arrow-left"></i>
+        <span>Back to Home</span>
+      </button>
+
+      {/* ===== HEADER ===== */}
       <header className="infra-header">
         <div className="container">
-          <div className="header-inner">
-            <div className="logo-area">
-              <img 
-                className="logo-img" 
-                src="https://www.nepad.org/sites/default/files/AUDA%2025TH%20ANNIVERSARY%20LOGO%20Lock%20up-01.png" 
-                alt="AUDA-NEPAD Logo" 
-                onError={(e) => e.target.src = 'https://placehold.co/120x50'}
-              />
-              <div className="logo-text">
-                <h2>Genome Editing Programme</h2>
-                <p>AUDA-NEPAD · Infrastructure Hub</p>
-              </div>
+          <div className="header-content">
+            <div className="header-left">
+              <h1 className="page-title">
+                <span className="title-icon"><i className="fas fa-microscope"></i></span>
+                <span className="title-text">Infrastructure & Equipment</span>
+              </h1>
+              <p className="page-subtitle">
+                State-of-the-art facilities, core equipment, and capacity-building centers supporting genome editing research across Africa
+              </p>
             </div>
-            <div className="nav-links">
-              <button onClick={onBackClick} className="back-link">
-                <i className="fas fa-arrow-left"></i> Back to Home
+            <div className="header-right">
+              <button 
+                className={`filter-toggle-btn ${isMobileFilterOpen ? 'active' : ''}`}
+                onClick={toggleFilterSidebar}
+                aria-expanded={isMobileFilterOpen}
+                aria-label="Toggle filters"
+              >
+                <i className="fas fa-sliders-h"></i>
+                <span>Filters</span>
+                {activeFilterCount > 0 && (
+                  <span className="filter-badge">{activeFilterCount}</span>
+                )}
+                <i className={`fas fa-chevron-${isMobileFilterOpen ? 'up' : 'down'}`}></i>
               </button>
             </div>
           </div>
+
+          {/* ===== STATS - IMPROVED VISIBILITY ===== */}
+          {!loading && !error && stats.total > 0 && (
+            <div className="stats-grid">
+              <div className="stat-card">
+                <div className="stat-icon-wrapper">
+                  <i className="fas fa-flask"></i>
+                </div>
+                <div className="stat-info">
+                  <span className="stat-number">{stats.total}</span>
+                  <span className="stat-label">Total Facilities</span>
+                </div>
+              </div>
+              <div className="stat-card">
+                <div className="stat-icon-wrapper active">
+                  <i className="fas fa-check-circle"></i>
+                </div>
+                <div className="stat-info">
+                  <span className="stat-number">{stats.fullyEquipped}</span>
+                  <span className="stat-label">Fully Equipped</span>
+                </div>
+              </div>
+              <div className="stat-card">
+                <div className="stat-icon-wrapper cft">
+                  <i className="fas fa-exclamation-triangle"></i>
+                </div>
+                <div className="stat-info">
+                  <span className="stat-number">{stats.partiallyEquipped}</span>
+                  <span className="stat-label">Partially Equipped</span>
+                </div>
+              </div>
+              <div className="stat-card">
+                <div className="stat-icon-wrapper funding">
+                  <i className="fas fa-play-circle"></i>
+                </div>
+                <div className="stat-info">
+                  <span className="stat-number">{stats.operational}</span>
+                  <span className="stat-label">Operational</span>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </header>
 
-      {/* Hero Section */}
-      <div className="infra-hero">
-        <div className="container">
-          <div className="hero-badge">
-            <i className="fas fa-microscope"></i> LABORATORY NETWORK
+      {/* ===== MAIN CONTENT ===== */}
+      <div className="container main-content">
+        {/* ===== FILTER SIDEBAR ===== */}
+        <aside className={`filter-sidebar ${isMobileFilterOpen ? 'open' : ''}`}>
+          <div className="filter-sidebar-header">
+            <h3>
+              <i className="fas fa-sliders-h"></i> Filters
+              {activeFilterCount > 0 && (
+                <span className="filter-count-badge">{activeFilterCount} active</span>
+              )}
+            </h3>
+            <button 
+              className="close-sidebar" 
+              onClick={() => setIsMobileFilterOpen(false)}
+              aria-label="Close filters"
+            >
+              <i className="fas fa-times"></i>
+            </button>
           </div>
-          <h1>Infrastructure & Equipment</h1>
-          <p>State-of-the-art facilities, core equipment, and capacity-building centers supporting genome editing research across Africa.</p>
-        </div>
-      </div>
 
-      <div className="container">
-        {/* Stats Cards */}
-        <div className="stats-grid">
-          <div className="stat-card">
-            <div className="stat-number">{stats.laboratories}+</div>
-            <div className="stat-label">Research Laboratories</div>
-          </div>
-          <div className="stat-card">
-            <div className="stat-number">{stats.bsl2}+</div>
-            <div className="stat-label">BSL-2+ Facilities</div>
-          </div>
-          <div className="stat-card">
-            <div className="stat-number">{stats.crisprLabs}</div>
-            <div className="stat-label">CRISPR Core Labs</div>
-          </div>
-          <div className="stat-card">
-            <div className="stat-number">{stats.trainingCenters}</div>
-            <div className="stat-label">Training Centers</div>
-          </div>
-        </div>
-
-        {/* Filter Bar */}
-        <div className="filter-bar-infra">
-          <div className="filter-tabs">
-            <button 
-              className={`filter-tab ${filter === 'all' ? 'active' : ''}`}
-              onClick={() => setFilter('all')}
-            >
-              All Facilities
-            </button>
-            <button 
-              className={`filter-tab ${filter === 'operational' ? 'active' : ''}`}
-              onClick={() => setFilter('operational')}
-            >
-              <i className="fas fa-check-circle"></i> Operational
-            </button>
-            <button 
-              className={`filter-tab ${filter === 'developing' ? 'active' : ''}`}
-              onClick={() => setFilter('developing')}
-            >
-              <i className="fas fa-chart-line"></i> Developing
-            </button>
-            <button 
-              className={`filter-tab ${filter === 'planned' ? 'active' : ''}`}
-              onClick={() => setFilter('planned')}
-            >
-              <i className="fas fa-clock"></i> Planned
-            </button>
-          </div>
-        </div>
-
-        {/* Loading State */}
-        {loading ? (
-          <div className="loading-state">
-            <div className="loading-spinner"></div>
-            <p>Loading infrastructure data...</p>
-          </div>
-        ) : (
-          <>
-            {/* Core Facilities Section */}
-            <div className="section-title">
-              <h2><i className="fas fa-flask"></i> Core Research Facilities</h2>
-              <div className="accent"></div>
+          <div className="filter-sidebar-body">
+            {/* Search */}
+            <div className="filter-group">
+              <label className="filter-label" htmlFor="search-facilities">
+                <i className="fas fa-search"></i> Search
+              </label>
+              <input
+                id="search-facilities"
+                type="text"
+                placeholder="Search facilities..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="filter-input"
+                aria-label="Search facilities"
+              />
             </div>
-            <div className="cards-grid">
-              {getFilteredFacilities().map(facility => (
-                <div 
-                  key={facility.id} 
-                  className="facility-card"
-                  onClick={() => setSelectedFacility(facility)}
+
+            {/* Biosafety Level */}
+            <div className="filter-group">
+              <SearchableDropdown
+                label="Biosafety Level"
+                icon="fas fa-shield-alt"
+                placeholder="Search biosafety levels..."
+                options={filterOptions.biosafetyLevels}
+                value={selectedBiosafetyLevel}
+                onChange={(value) => setSelectedBiosafetyLevel(value)}
+                showCounts={true}
+              />
+            </div>
+
+            {/* Country */}
+            <div className="filter-group">
+              <SearchableDropdown
+                label="Country"
+                icon="fas fa-map-marker-alt"
+                placeholder="Search countries..."
+                options={filterOptions.countries}
+                value={selectedCountry}
+                onChange={(value) => setSelectedCountry(value)}
+                showCounts={true}
+              />
+            </div>
+
+            {/* Organisation */}
+            <div className="filter-group">
+              <SearchableDropdown
+                label="Organisation"
+                icon="fas fa-building"
+                placeholder="Search organisations..."
+                options={filterOptions.organisations}
+                value={selectedOrganisation}
+                onChange={(value) => setSelectedOrganisation(value)}
+                showCounts={true}
+              />
+            </div>
+
+            {/* Status */}
+            <div className="filter-group">
+              <SearchableDropdown
+                label="Status"
+                icon="fas fa-circle"
+                placeholder="Search status..."
+                options={filterOptions.statuses}
+                value={selectedStatus}
+                onChange={(value) => setSelectedStatus(value)}
+                showCounts={true}
+              />
+            </div>
+
+            {/* Equipment Type */}
+            <div className="filter-group">
+              <SearchableDropdown
+                label="Equipment Type"
+                icon="fas fa-microscope"
+                placeholder="Search equipment..."
+                options={filterOptions.equipmentTypes}
+                value={selectedEquipmentType}
+                onChange={(value) => setSelectedEquipmentType(value)}
+                showCounts={true}
+              />
+            </div>
+
+            <button 
+              className="reset-filters-btn" 
+              onClick={resetFilters}
+              aria-label="Reset all filters"
+            >
+              <i className="fas fa-undo"></i> Reset All Filters
+            </button>
+          </div>
+        </aside>
+
+        {/* ===== FACILITIES GRID ===== */}
+        <main className="infra-content">
+          <div className="results-header">
+            <div className="results-info">
+              <span className="results-count">
+                <strong>{filteredFacilities.length}</strong> facilities found
+              </span>
+              {activeFilterCount > 0 && (
+                <span className="active-filters-badge">
+                  <i className="fas fa-filter"></i>
+                  {activeFilterCount} filter{activeFilterCount > 1 ? 's' : ''} active
+                </span>
+              )}
+            </div>
+            <div className="results-actions">
+              <button 
+                className="view-toggle"
+                onClick={toggleFilterSidebar}
+                aria-expanded={isMobileFilterOpen}
+              >
+                <i className={`fas fa-${isMobileFilterOpen ? 'times' : 'sliders-h'}`}></i>
+                {isMobileFilterOpen ? 'Hide Filters' : 'Show Filters'}
+              </button>
+              
+              {/* ===== VIEW TOGGLE BUTTONS ===== */}
+              <div className="view-toggle-group">
+                <button 
+                  className={`view-mode-btn ${viewMode === 'grid' ? 'active' : ''}`}
+                  onClick={() => toggleViewMode('grid')}
+                  aria-label="Grid view"
+                  title="Grid view"
                 >
-                  <div className="card-icon">
-                    <i className="fas fa-flask"></i>
-                  </div>
-                  <h3>{facility.name}</h3>
-                  <div className="facility-location">
-                    <i className="fas fa-map-marker-alt"></i> {facility.city}, {facility.country}
-                  </div>
-                  <span className={`facility-status ${facility.statusClass}`}>
-                    {facility.status}
-                  </span>
-                  <div className="facility-desc">
-                    {facility.description.substring(0, 100)}...
-                  </div>
-                  <div className="equipment-list">
-                    {facility.equipment.slice(0, 3).map((eq, idx) => (
-                      <span key={idx} className="equipment-tag">{eq}</span>
-                    ))}
-                    {facility.equipment.length > 3 && (
-                      <span className="equipment-tag">+{facility.equipment.length - 3} more</span>
-                    )}
-                  </div>
-                  <div className="card-footer">
-                    <span className="view-details">View Details <i className="fas fa-arrow-right"></i></span>
-                  </div>
-                </div>
-              ))}
+                  <i className="fas fa-th"></i>
+                </button>
+                <button 
+                  className={`view-mode-btn ${viewMode === 'list' ? 'active' : ''}`}
+                  onClick={() => toggleViewMode('list')}
+                  aria-label="List view"
+                  title="List view"
+                >
+                  <i className="fas fa-list"></i>
+                </button>
+              </div>
             </div>
+          </div>
 
-            {/* Equipment Section */}
-            <div className="section-title">
-              <h2><i className="fas fa-microchip"></i> Equipment Inventory by Category</h2>
-              <div className="accent"></div>
-            </div>
-            <div className="equipment-grid">
-              {equipmentCategories.map((category, idx) => (
-                <div key={idx} className="equipment-category">
-                  <h4><i className={category.icon}></i> {category.name}</h4>
-                  <ul>
-                    {category.items.map((item, itemIdx) => (
-                      <li key={itemIdx}>
-                        <span className="equipment-name">{item.name}</span>
-                        <span className="equipment-count">{item.count} units</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ))}
-            </div>
-
-            {/* Training Centers Section */}
-            <div className="section-title">
-              <h2><i className="fas fa-chalkboard-user"></i> Training & Capacity Building Centers</h2>
-              <div className="accent"></div>
-            </div>
-            <div className="training-grid">
-              {trainingCenters.map(center => (
-                <div key={center.id} className="training-card">
-                  <div className="training-icon">
-                    <i className="fas fa-graduation-cap"></i>
-                  </div>
-                  <h4>{center.name}</h4>
-                  <div className="facility-location">
-                    <i className="fas fa-map-marker-alt"></i> {center.city}, {center.country}
-                  </div>
-                  <div className="training-focus">
-                    <strong>Focus:</strong> {center.focus}
-                  </div>
-                  <div className="training-programs">
-                    {center.programs.map((program, idx) => (
-                      <span key={idx} className="program-tag">{program}</span>
-                    ))}
-                  </div>
-                  <div className="training-stats">
-                    <span><i className="fas fa-users"></i> {center.capacity}</span>
-                    <span><i className="fas fa-calendar-alt"></i> Est. {center.established}</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </>
-        )}
-      </div>
-
-      {/* Facility Detail Modal */}
-      {selectedFacility && (
-        <div className="modal-overlay" onClick={() => setSelectedFacility(null)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h2>{selectedFacility.name}</h2>
-              <button className="close-modal" onClick={() => setSelectedFacility(null)}>
-                <i className="fas fa-times"></i>
+          {error ? (
+            <div className="error-message">
+              <i className="fas fa-exclamation-circle error-icon"></i>
+              <h3>Unable to load infrastructure data</h3>
+              <p>{error}</p>
+              <button onClick={fetchFacilities} className="btn-primary">
+                <i className="fas fa-redo"></i> Retry
               </button>
             </div>
-            <div className="modal-body">
-              <div className="modal-status">
-                <span className={`facility-status ${selectedFacility.statusClass}`}>
-                  {selectedFacility.status}
-                </span>
-              </div>
-              
-              <div className="modal-location">
-                <i className="fas fa-map-marker-alt"></i> {selectedFacility.city}, {selectedFacility.country} ({selectedFacility.region})
+          ) : (
+            <>
+              <div className={`facilities-grid ${viewMode === 'list' ? 'list-view' : 'grid-view'}`}>
+                {filteredFacilities.map((facility, index) => (
+                  <div 
+                    key={facility.id} 
+                    className="facility-card"
+                    onClick={() => setSelectedFacility(facility)}
+                    style={{ animationDelay: `${index * 0.05}s` }}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => e.key === 'Enter' && setSelectedFacility(facility)}
+                    aria-label={`View details for ${facility.name}`}
+                  >
+                    <div className="facility-card-header">
+                      <div className="facility-icon">
+                        <i className="fas fa-flask"></i>
+                      </div>
+                      <span 
+                        className="status-badge"
+                        style={{ backgroundColor: statusColors[facility.status] || '#6B7280' }}
+                      >
+                        <i className={`fas ${statusIcons[facility.status] || 'fa-circle'}`}></i>
+                        {getStatusDisplay(facility.status)}
+                      </span>
+                    </div>
+
+                    <h3>{facility.name}</h3>
+
+                    <div className="facility-meta">
+                      <span className="meta-item">
+                        <i className="fas fa-building"></i>
+                        {facility.institution_name || 'Unknown Institution'}
+                      </span>
+                      <span className="meta-item">
+                        <i className="fas fa-map-marker-alt"></i>
+                        {facility.country_name || 'Unknown Country'}
+                      </span>
+                      {facility.biosafety_level && facility.biosafety_level.length > 0 && (
+                        <span className="meta-item biosafety-levels">
+                          <i className="fas fa-shield-alt"></i>
+                          {facility.biosafety_level.map(level => (
+                            <span key={level} className="biosafety-level-tag" style={{ backgroundColor: biosafetyLevelColors[level] || '#6B7280' }}>
+                              {getBiosafetyLevelDisplay(level)}
+                            </span>
+                          ))}
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="facility-desc">
+                      {facility.description?.substring(0, 120)}...
+                    </div>
+
+                    {facility.equipment_list && facility.equipment_list.length > 0 && (
+                      <div className="equipment-tags">
+                        {facility.equipment_list.slice(0, 3).map((eq, idx) => (
+                          <span key={idx} className="equipment-tag">{eq}</span>
+                        ))}
+                        {facility.equipment_list.length > 3 && (
+                          <span className="equipment-tag more">+{facility.equipment_list.length - 3}</span>
+                        )}
+                      </div>
+                    )}
+
+                    <div className="facility-footer">
+                      <span className="view-details">
+                        View Details <i className="fas fa-arrow-right"></i>
+                      </span>
+                    </div>
+                  </div>
+                ))}
               </div>
 
-              <div className="modal-section">
-                <h4><i className="fas fa-info-circle"></i> Overview</h4>
-                <p>{selectedFacility.fullDescription || selectedFacility.description}</p>
-              </div>
+              {/* No Results */}
+              {filteredFacilities.length === 0 && (
+                <div className="no-results">
+                  <i className="fas fa-flask empty-icon"></i>
+                  <h3>No facilities found</h3>
+                  <p>Try adjusting your search or filter criteria.</p>
+                  <button className="clear-filters-btn" onClick={resetFilters}>
+                    <i className="fas fa-undo"></i> Clear all filters
+                  </button>
+                </div>
+              )}
+            </>
+          )}
+        </main>
+      </div>
 
-              <div className="modal-stats">
-                <div className="modal-stat">
-                  <div className="stat-value">{selectedFacility.established}</div>
-                  <div className="stat-label">Established</div>
-                </div>
-                <div className="modal-stat">
-                  <div className="stat-value">{selectedFacility.capacity}</div>
-                  <div className="stat-label">Research Capacity</div>
-                </div>
-                <div className="modal-stat">
-                  <div className="stat-value">{selectedFacility.funding}</div>
-                  <div className="stat-label">Total Funding</div>
-                </div>
-              </div>
+      {/* ===== FACILITY DETAIL MODAL ===== */}
+      {selectedFacility && (
+        <div 
+          className="modal-overlay" 
+          onClick={() => setSelectedFacility(null)}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="modal-title"
+        >
+          <div className="modal-container">
+            <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+              <button 
+                className="modal-close" 
+                onClick={() => setSelectedFacility(null)}
+                aria-label="Close facility details"
+              >
+                <i className="fas fa-times"></i>
+              </button>
 
-              <div className="modal-section">
-                <h4><i className="fas fa-microscope"></i> Key Equipment</h4>
-                <div className="equipment-list">
-                  {selectedFacility.equipment.map((eq, idx) => (
-                    <span key={idx} className="equipment-tag">{eq}</span>
-                  ))}
+              <div className="modal-body">
+                <div className="modal-header-section">
+                  <div className="modal-title-section">
+                    <h2 id="modal-title">{selectedFacility.name}</h2>
+                    <span 
+                      className="status-badge large"
+                      style={{ backgroundColor: statusColors[selectedFacility.status] || '#6B7280' }}
+                    >
+                      <i className={`fas ${statusIcons[selectedFacility.status] || 'fa-circle'}`}></i>
+                      {getStatusDisplay(selectedFacility.status)}
+                    </span>
+                  </div>
+                  <div className="modal-meta">
+                    <span><i className="fas fa-building"></i> {selectedFacility.institution_name || 'Unknown Institution'}</span>
+                    <span><i className="fas fa-map-marker-alt"></i> {selectedFacility.country_name || 'Unknown Country'}</span>
+                    {selectedFacility.biosafety_level && selectedFacility.biosafety_level.length > 0 && (
+                      <span>
+                        <i className="fas fa-shield-alt"></i>
+                        {selectedFacility.biosafety_level.map(level => (
+                          <span key={level} className="biosafety-level-tag modal-tag" style={{ backgroundColor: biosafetyLevelColors[level] || '#6B7280' }}>
+                            {getBiosafetyLevelDisplay(level)}
+                          </span>
+                        ))}
+                      </span>
+                    )}
+                  </div>
                 </div>
-              </div>
 
-              <div className="modal-section">
-                <h4><i className="fas fa-bullseye"></i> Research Focus</h4>
-                <div className="equipment-list">
-                  {selectedFacility.focus.map((f, idx) => (
-                    <span key={idx} className="focus-tag">{f}</span>
-                  ))}
+                {/* Overview */}
+                <div className="modal-section">
+                  <h3><i className="fas fa-info-circle"></i> Overview</h3>
+                  <p>{selectedFacility.description || 'No description available.'}</p>
                 </div>
-              </div>
 
-              <div className="modal-section">
-                <h4><i className="fas fa-handshake"></i> Collaborations</h4>
-                <div className="collaborations-list">
-                  {selectedFacility.collaborations.map((collab, idx) => (
-                    <span key={idx} className="collab-tag">{collab}</span>
-                  ))}
+                {/* Stats */}
+                <div className="modal-stats-grid">
+                  <div className="modal-stat">
+                    <div className="stat-number">{selectedFacility.researcher_count || 0}</div>
+                    <div className="stat-label">Researchers</div>
+                  </div>
+                  <div className="modal-stat">
+                    <div className="stat-number">{selectedFacility.equipment_count || 0}</div>
+                    <div className="stat-label">Equipment Items</div>
+                  </div>
+                  <div className="modal-stat">
+                    <div className="stat-number">{selectedFacility.biosafety_level?.length || 0}</div>
+                    <div className="stat-label">Biosafety Levels</div>
+                  </div>
                 </div>
-              </div>
 
-              <div className="modal-contact">
-                <i className="fas fa-info-circle"></i>
-                <p>Access available through collaborative research agreements. Contact AUDA-NEPAD for partnership opportunities.</p>
+                {/* Equipment */}
+                {selectedFacility.equipment_list && selectedFacility.equipment_list.length > 0 && (
+                  <div className="modal-section">
+                    <h3><i className="fas fa-microscope"></i> Equipment</h3>
+                    <div className="equipment-list-modal">
+                      {selectedFacility.equipment_list.map((eq, idx) => (
+                        <span key={idx} className="equipment-item">{eq}</span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Equipment Needs */}
+                {selectedFacility.equipment_needs && selectedFacility.equipment_needs.length > 0 && (
+                  <div className="modal-section">
+                    <h3><i className="fas fa-tools"></i> Equipment Needs</h3>
+                    <div className="equipment-list-modal">
+                      {selectedFacility.equipment_needs.map((eq, idx) => (
+                        <span key={idx} className="equipment-item need">{eq}</span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Limitations */}
+                {selectedFacility.limitations && (
+                  <div className="modal-section">
+                    <h3><i className="fas fa-exclamation-triangle"></i> Limitations</h3>
+                    <p>{selectedFacility.limitations}</p>
+                  </div>
+                )}
+
+                {/* Support Needed */}
+                {selectedFacility.support_needed && (
+                  <div className="modal-section">
+                    <h3><i className="fas fa-hand-holding-heart"></i> Support Needed</h3>
+                    <p>{selectedFacility.support_needed}</p>
+                  </div>
+                )}
+
+                {/* Facility Type */}
+                {selectedFacility.facility_type && (
+                  <div className="modal-section">
+                    <h3><i className="fas fa-tag"></i> Facility Type</h3>
+                    <p>{selectedFacility.facility_type}</p>
+                  </div>
+                )}
+
+                <div className="modal-footer">
+                  <span>Status: {getStatusDisplay(selectedFacility.status)}</span>
+                  {selectedFacility.is_active !== undefined && (
+                    <span className={selectedFacility.is_active ? 'status-active' : 'status-inactive'}>
+                      {selectedFacility.is_active ? 'Active' : 'Inactive'}
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
           </div>
         </div>
       )}
 
-      {/* Footer */}
+      {/* ===== FOOTER ===== */}
       <footer className="infra-footer">
         <div className="container">
           <div className="footer-content">
-            <p>© 2026 AUDA-NEPAD Genome Editing Programme — Building world-class infrastructure for African science.</p>
+            <p>© {new Date().getFullYear()} AUDA-NEPAD Genome Editing Programme — Building world-class infrastructure for African science.</p>
             <button onClick={onBackClick} className="footer-back-btn">
               <i className="fas fa-home"></i> Back to Home
             </button>

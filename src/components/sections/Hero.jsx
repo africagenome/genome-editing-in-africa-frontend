@@ -38,36 +38,15 @@ const Hero = ({ onOpenModal }) => {
           <div className="hero-badge">
             <i class="fa-solid fa-dna"></i>Science for African Renaissance
           </div>
-          <h2 style={{ color: 'white' }}>
-            Genome Editing in Africa:<br /> 
-            <span className="hero-highlight">Innovation & Resilience</span>
-          </h2>
+          <h2 style={{ color: 'white' }}>Genome Editing in Africa </h2> <br />
+            <h3><span className="hero-highlight">Prosperity | Food security | Climate resilience </span>
+          </h3>
+          <br />
           <p className="hero-desc">
-            Leveraging next-generation biotechnologies to transform food security, 
-            eradicate genetic diseases, and build climate resilience — fully aligned with Agenda 2063.
+            Advancing Agenda 2063’s vision of a prosperous, food-secure, and climate-resilient Africa through responsible genome editing, innovation, sustainable food systems and agricultural transformation.
           </p>
-          <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
-            <Button variant="primary" href="#">
-              Explore Action Plan <i className="fas fa-arrow-right"></i>
-            </Button>
-            <Button variant="outline-light" onClick={onOpenModal}>
-              <i className="fas fa-search"></i> Advanced Search
-            </Button>
-          </div>
-          <div className="hero-stats">
-            <div className="stat-item">
-              <div className="stat-number">17</div>
-              <div>Member States Active</div>
-            </div>
-            <div className="stat-item">
-              <div className="stat-number">$48M</div>
-              <div>Investment 2025-27</div>
-            </div>
-            <div className="stat-item">
-              <div className="stat-number">47</div>
-              <div>Active Projects</div>
-            </div>
-          </div>
+          
+         
         </div>
       </div>
     </section>
