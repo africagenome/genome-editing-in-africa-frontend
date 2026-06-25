@@ -650,7 +650,7 @@ const DashboardPage = ({ onBackClick }) => {
             </div>
 
             {/* Institutions per Country */}
-            <div className="chart-card">
+            {/* <div className="chart-card">
               <div className="chart-header">
                 <h3>🏛️ Institutions per Country</h3>
                 <span className="chart-badge">Count</span>
@@ -660,7 +660,7 @@ const DashboardPage = ({ onBackClick }) => {
                   <Bar data={institutionsByCountryChartData} options={horizontalBarOptions} />
                 )}
               </div>
-            </div>
+            </div> */}
 
             {/* Institutions by Category */}
             <div className="chart-card">
@@ -676,7 +676,7 @@ const DashboardPage = ({ onBackClick }) => {
             </div>
 
             {/* Organisms per Country */}
-            <div className="chart-card">
+            {/* <div className="chart-card">
               <div className="chart-header">
                 <h3>🧬 Organisms per Country</h3>
                 <span className="chart-badge">Count</span>
@@ -686,7 +686,7 @@ const DashboardPage = ({ onBackClick }) => {
                   <Bar data={organismsByCountryChartData} options={horizontalBarOptions} />
                 )}
               </div>
-            </div>
+            </div> */}
           </div>
 
           {/* Legend Footer */}

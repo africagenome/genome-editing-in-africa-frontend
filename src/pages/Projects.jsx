@@ -180,8 +180,6 @@ const Projects = ({ onBackClick }) => {
     lead_institution: '',
     search: '',
     year: '',
-    funding_min: '',
-    funding_max: '',
     sort_by: '-start_year'
   });
 
@@ -267,12 +265,14 @@ const Projects = ({ onBackClick }) => {
     return map[status] || 'fa-circle';
   }, []);
 
-  // ===== FETCH FILTER OPTIONS =====
+  // ===== FETCH FILTER OPTIONS & STATS =====
   const fetchFilterOptions = useCallback(async () => {
     try {
+      // Fetch stats from the dedicated stats endpoint
       const stats = await apiService.getProjectStats();
       setProjectStats(stats);
 
+      // Build filter options from stats
       const options = {
         statuses: Object.keys(stats.by_status || {}).map(key => ({
           value: key,
@@ -305,6 +305,7 @@ const Projects = ({ onBackClick }) => {
         years: []
       };
 
+      // Get lead institutions and years from context projects
       if (contextProjects && contextProjects.length > 0) {
         const instSet = new Map();
         contextProjects.forEach(p => {
@@ -431,8 +432,6 @@ const Projects = ({ onBackClick }) => {
       lead_institution: '',
       search: '',
       year: '',
-      funding_min: '',
-      funding_max: '',
       sort_by: '-start_year'
     });
     setCurrentPage(1);
@@ -529,7 +528,7 @@ const Projects = ({ onBackClick }) => {
             </div>
           </div>
 
-          {/* ===== STATS - IMPROVED VISIBILITY ===== */}
+          {/* ===== STATS - FROM /projects/stats/ ENDPOINT ===== */}
           {projectStats && (
             <div className="stats-grid">
               <div className="stat-card">
@@ -560,14 +559,12 @@ const Projects = ({ onBackClick }) => {
                 </div>
               </div>
               <div className="stat-card">
-                <div className="stat-icon-wrapper funding">
-                  <i className="fas fa-coins"></i>
+                <div className="stat-icon-wrapper commercial">
+                  <i className="fas fa-rocket"></i>
                 </div>
                 <div className="stat-info">
-                  <span className="stat-number">
-                    ${(projectStats.total_funding || 0).toLocaleString()}
-                  </span>
-                  <span className="stat-label">Total Funding</span>
+                  <span className="stat-number">{projectStats.total_commercial || 0}</span>
+                  <span className="stat-label">Commercial Release</span>
                 </div>
               </div>
             </div>
@@ -703,34 +700,6 @@ const Projects = ({ onBackClick }) => {
               />
             </div>
 
-            {/* Funding Range */}
-            <div className="filter-group">
-              <label className="filter-label">
-                <i className="fas fa-money-bill-wave"></i> Funding Range
-              </label>
-              <div className="funding-range">
-                <input
-                  type="number"
-                  placeholder="Min"
-                  value={filters.funding_min}
-                  onChange={(e) => handleFilterChange('funding_min', e.target.value)}
-                  className="filter-input funding-input"
-                  aria-label="Minimum funding"
-                  min="0"
-                />
-                <span className="range-separator">to</span>
-                <input
-                  type="number"
-                  placeholder="Max"
-                  value={filters.funding_max}
-                  onChange={(e) => handleFilterChange('funding_max', e.target.value)}
-                  className="filter-input funding-input"
-                  aria-label="Maximum funding"
-                  min="0"
-                />
-              </div>
-            </div>
-
             {/* Sort */}
             <div className="filter-group">
               <label className="filter-label" htmlFor="sort-projects">
@@ -746,8 +715,6 @@ const Projects = ({ onBackClick }) => {
                 <option value="start_year">Oldest First</option>
                 <option value="-created_at">Recently Added</option>
                 <option value="title">Alphabetical</option>
-                <option value="-funding_amount">Highest Funding</option>
-                <option value="funding_amount">Lowest Funding</option>
               </select>
             </div>
 
@@ -889,17 +856,30 @@ const Projects = ({ onBackClick }) => {
                           </div>
                         )}
 
-                        {project.funding_amount && (
-                          <div className="project-funding">
-                            <span className="funding-amount">
-                              <i className="fas fa-coins"></i>
-                              ${Number(project.funding_amount).toLocaleString()}
+                        {project.partners && project.partners.length > 0 && (
+                          <div className="project-partners">
+                            <span className="partners-label">
+                              <i className="fas fa-handshake"></i>
                             </span>
-                            {project.funding_source && (
-                              <span className="funding-source">
-                                • {project.funding_source}
-                              </span>
-                            )}
+                            <div className="partners-list">
+                              {project.partners.slice(0, 3).map((partner, idx) => (
+                                <span key={idx} className="partner-tag">
+                                  {partner.name || partner}
+                                </span>
+                              ))}
+                              {project.partners.length > 3 && (
+                                <span className="partner-tag more">
+                                  +{project.partners.length - 3}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        )}
+
+                        {project.impact && (
+                          <div className="project-impact">
+                            <i className="fas fa-bullseye"></i>
+                            <span>{project.impact}</span>
                           </div>
                         )}
                       </div>
@@ -1038,15 +1018,14 @@ const Projects = ({ onBackClick }) => {
                     </div>
                   </div>
                   <div className="modal-meta-item">
-                    <i className="fas fa-coins"></i>
+                    <i className="fas fa-handshake"></i>
                     <div>
-                      <label>Funding</label>
+                      <label>Partners</label>
                       <span>
-                        {selectedProject.funding_amount 
-                          ? `$${Number(selectedProject.funding_amount).toLocaleString()}`
+                        {selectedProject.partners && selectedProject.partners.length > 0 
+                          ? selectedProject.partners.map(p => p.name || p).join(', ')
                           : 'N/A'
                         }
-                        {selectedProject.funding_source && ` • ${selectedProject.funding_source}`}
                       </span>
                     </div>
                   </div>
@@ -1109,6 +1088,13 @@ const Projects = ({ onBackClick }) => {
                   </div>
                 )}
 
+                {selectedProject.impact && (
+                  <div className="modal-section">
+                    <h3><i className="fas fa-bullseye"></i> Expected Impact</h3>
+                    <p>{selectedProject.impact}</p>
+                  </div>
+                )}
+
                 {similarProjects.length > 0 && (
                   <div className="modal-section">
                     <h3><i className="fas fa-link"></i> Similar Projects</h3>
@@ -1143,7 +1129,7 @@ const Projects = ({ onBackClick }) => {
                     <div className="modal-partners-list">
                       {selectedProject.partners.map(partner => (
                         <span key={partner.id} className="modal-partner-tag">
-                          {partner.name}
+                          {partner.name || partner}
                         </span>
                       ))}
                     </div>

@@ -139,13 +139,13 @@ const ContactPage = ({ onBackClick }) => {
       <section className="cta-section">
         <div className="container">
           <div className="cta-content">
-            <h2>Interested in <span className="highlight">Partnering</span> with GENADA?</h2>
+            <h2>Interested in <span className="highlight">Partnering</span> with us</h2>
             <p>
               Learn more about our genome editing programme and how you can collaborate with us.
             </p>
             <div className="cta-actions">
               <button className="btn-primary" onClick={() => window.location.href = '/about'}>
-                <i className="fas fa-info-circle"></i> About GENADA
+                <i className="fas fa-info-circle"></i> About
               </button>
               <button className="btn-secondary" onClick={() => window.location.href = '/projects'}>
                 <i className="fas fa-project-diagram"></i> View Projects

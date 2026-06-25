@@ -8,9 +8,9 @@ const AboutPage = ({ onBackClick }) => {
 
   // Timeline data
   const timelineData = [
-    { year: '2021', title: 'Inception', description: 'GENADA was conceptualized as a flagship program under AUDA-NEPAD to advance genome editing research in Africa.' },
+    { year: '2021', title: 'Inception', description: 'Genome Editing Database for Agricultural Development in Africa was conceptualized as a flagship program under AUDA-NEPAD to advance genome editing research in Africa.' },
     { year: '2022', title: 'Stakeholder Engagement', description: 'Extensive consultations with African governments, research institutions, and international partners to define the program\'s strategic direction.' },
-    { year: '2023', title: 'Program Launch', description: 'Official launch of GENADA at the AUDA-NEPAD headquarters in Midrand, South Africa.' },
+    { year: '2023', title: 'Program Launch', description: 'Official launch of Genome Editing Database for Agricultural Development in Africa at the AUDA-NEPAD headquarters in Midrand, South Africa.' },
     { year: '2024', title: 'First Projects', description: 'Inaugural cohort of genome editing projects initiated across 16 African countries.' },
     { year: '2025', title: 'Capacity Building', description: 'Establishment of training programs and partnerships with leading research institutions globally.' },
     { year: '2026', title: 'Current Phase', description: 'Expanding network, advancing research, and building Africa\'s genome editing ecosystem.' }
@@ -140,10 +140,10 @@ const AboutPage = ({ onBackClick }) => {
         <div className="container">
           <div className="mission-content">
             <div className="mission-text">
-              <span className="section-tag">About GENADA</span>
+              <span className="section-tag">About Genome Editing Database for Agricultural Development in Africa</span>
               <h2>Advancing Genome Editing <span className="highlight">for Africa's Future</span></h2>
               <p>
-                GENADA is committed to building a sustainable genome editing ecosystem in Africa 
+                Genome Editing Database for Agricultural Development in Africa is committed to building a sustainable genome editing ecosystem in Africa 
                 that delivers tangible benefits for farmers, consumers, and the environment.
               </p>
               <ul className="mission-list">
@@ -191,7 +191,7 @@ const AboutPage = ({ onBackClick }) => {
             <span className="section-tag">Strategic Pillars</span>
             <h2 className="section-title">Our <span className="highlight">Core Focus Areas</span></h2>
             <p className="section-subtitle">
-              GENADA's work is organized around four interconnected pillars that drive our impact.
+              Genome Editing Database for Agricultural Development in Africa's work is organized around four interconnected pillars that drive our impact.
             </p>
           </div>
 
@@ -227,7 +227,7 @@ const AboutPage = ({ onBackClick }) => {
             <h2>Join Us in <span className="highlight">Advancing Genome Editing</span> for Africa</h2>
             <p>
               Whether you're a researcher, policymaker, student, or partner, there are many ways 
-              to get involved with GENADA.
+              to get involved with Genome Editing Database for Agricultural Development in Africa.
             </p>
             <div className="cta-actions">
               <button className="btn-primary">

@@ -15,13 +15,9 @@ const TopBar = ({
   onExpertsClick,
   onRegulatoryClick,
   onDashboardClick,
-  // Sub-navigation handlers
-  // onStrategyClick,
-  // onEthicsClick,
-  // onPublicationsClick,
-  // onEventsClick,
   onAboutClick,
   onContactClick,
+  onHomeClick,
   currentPage = '/'
 }) => {
   const location = useLocation();
@@ -102,12 +98,32 @@ const TopBar = ({
     }
   };
 
-  // Grouped navigation structure
-  const navGroups = [
+  // ===== NAVIGATION STRUCTURE - FLAT MENU =====
+  // Each top-level item is a direct link or dropdown
+  const navItems = [
+    {
+      id: 'home',
+      label: 'Home',
+      icon: 'fas fa-home',
+      path: '/',
+      onClick: onHomeClick || handleLogoClick,
+      isDirect: true,
+      color: '#5B7E96'
+    },
+    {
+      id: 'about',
+      label: 'About',
+      icon: 'fas fa-info-circle',
+      isDirect: true,
+      path: '/about',
+      onClick: onAboutClick,
+      color: '#5B7E96'
+    },
     {
       id: 'explore',
       label: 'Explore',
       icon: 'fas fa-compass',
+      isDropdown: true,
       items: [
         { 
           id: 'projects',
@@ -147,6 +163,7 @@ const TopBar = ({
       id: 'resources',
       label: 'Resources',
       icon: 'fas fa-book',
+      isDropdown: true,
       items: [
         { 
           id: 'regulatory',
@@ -164,82 +181,27 @@ const TopBar = ({
           onClick: onExpertsClick,
           color: '#D4A373'
         },
-        // { 
-        //   id: 'publications',
-        //   path: '/publications',
-        //   label: 'Publications', 
-        //   icon: 'fas fa-file-alt',
-        //   onClick: onPublicationsClick,
-        //   color: '#8B5CF6'
-        // },
-        // { 
-        //   id: 'strategy',
-        //   path: '/strategy',
-        //   label: 'Strategic Roadmap', 
-        //   icon: 'fas fa-road',
-        //   onClick: onStrategyClick,
-        //   color: '#10B981'
-        // },
       ]
     },
     {
       id: 'insights',
       label: 'Insights',
       icon: 'fas fa-chart-line',
-      items: [
-        { 
-          id: 'dashboard',
-          path: '/dashboard',
-          label: 'Analytics Dashboard', 
-          icon: 'fas fa-chart-pie',
-          onClick: onDashboardClick,
-          color: '#8B5CF6'
-        },
-        // { 
-        //   id: 'ethics',
-        //   path: '/ethics',
-        //   label: 'Ethics Framework', 
-        //   icon: 'fas fa-balance-scale',
-        //   onClick: onEthicsClick,
-        //   color: '#F59E0B'
-        // },
-        // { 
-        //   id: 'events',
-        //   path: '/events',
-        //   label: 'Events & Webinars', 
-        //   icon: 'fas fa-calendar-alt',
-        //   onClick: onEventsClick,
-        //   color: '#EC4899'
-        // },
-      ]
+      isDirect: true,
+      path: '/dashboard',
+      onClick: onDashboardClick,
+      color: '#8B5CF6'
     },
     {
-      id: 'about',
-      label: 'About',
-      icon: 'fas fa-info-circle',
-      items: [
-        { 
-          id: 'about-genada',
-          path: '/about',
-          label: 'About GENADA', 
-          icon: 'fas fa-info-circle',
-          onClick: onAboutClick,
-          color: '#5B7E96'
-        },
-        { 
-          id: 'contact',
-          path: '/contact',
-          label: 'Contact Us', 
-          icon: 'fas fa-envelope',
-          onClick: onContactClick,
-          color: '#B4A269'
-        },
-      ]
+      id: 'contact',
+      label: 'Contact',
+      icon: 'fas fa-envelope',
+      isDirect: true,
+      path: '/contact',
+      onClick: onContactClick,
+      color: '#B4A269'
     }
   ];
-
-  // Flatten all items for mobile menu
-  const allMobileItems = navGroups.flatMap(group => group.items);
 
   return (
     <>
@@ -267,7 +229,7 @@ const TopBar = ({
               />
               <div className="logo-text">
                 <div className="logo-title">
-                  Genome Editing Network for Agricultural Development in Africa (GENADA)
+                  Genome Editing Database for Agricultural Development in Africa
                 </div>
                 <span className="logo-subtitle">
                   African Union Development Agency · Agenda 2063
@@ -279,48 +241,72 @@ const TopBar = ({
           {/* Desktop Navigation */}
           <nav className="nav-section" aria-label="Main navigation">
             <div className="nav-links-desktop">
-              {navGroups.map((group) => {
-                const isGroupActive = group.items.some(item => isActive(item.path));
-                const isOpen = openDropdown === group.id;
-
-                return (
-                  <div 
-                    key={group.id}
-                    className={`nav-dropdown ${isOpen ? 'open' : ''}`}
-                    onMouseEnter={() => setOpenDropdown(group.id)}
-                    onMouseLeave={() => setOpenDropdown(null)}
-                  >
+              {navItems.map((item) => {
+                // ===== DIRECT LINK ITEMS =====
+                if (item.isDirect) {
+                  return (
                     <button
-                      className={`nav-dropdown-trigger ${isGroupActive ? 'active' : ''}`}
-                      onClick={() => setOpenDropdown(isOpen ? null : group.id)}
-                      aria-expanded={isOpen}
-                      aria-haspopup="true"
+                      key={item.id}
+                      onClick={() => handleNavClick(item.onClick)}
+                      className={`nav-item direct-nav-item ${isActive(item.path) ? 'active' : ''}`}
+                      style={{ '--nav-color': item.color }}
+                      aria-current={isActive(item.path) ? 'page' : undefined}
                     >
-                      <i className={group.icon} aria-hidden="true"></i>
-                      <span>{group.label}</span>
-                      <i className={`fas fa-chevron-down dropdown-arrow ${isOpen ? 'rotated' : ''}`} aria-hidden="true"></i>
+                      <i className={item.icon} aria-hidden="true"></i>
+                      <span>{item.label}</span>
+                      {isActive(item.path) && (
+                        <span className="nav-indicator" aria-hidden="true"></span>
+                      )}
                     </button>
+                  );
+                }
 
-                    <div className="nav-dropdown-menu" role="menu">
-                      {group.items.map((item) => (
-                        <button
-                          key={item.id}
-                          onClick={() => handleNavClick(item.onClick)}
-                          className={`nav-dropdown-item ${isActive(item.path) ? 'active' : ''}`}
-                          style={{ '--nav-color': item.color }}
-                          role="menuitem"
-                          aria-current={isActive(item.path) ? 'page' : undefined}
-                        >
-                          <i className={item.icon} aria-hidden="true"></i>
-                          <span>{item.label}</span>
-                          {isActive(item.path) && (
-                            <span className="dropdown-item-indicator" aria-hidden="true"></span>
-                          )}
-                        </button>
-                      ))}
+                // ===== DROPDOWN ITEMS =====
+                if (item.isDropdown) {
+                  const isGroupActive = item.items.some(subItem => isActive(subItem.path));
+                  const isOpen = openDropdown === item.id;
+
+                  return (
+                    <div 
+                      key={item.id}
+                      className={`nav-dropdown ${isOpen ? 'open' : ''}`}
+                      onMouseEnter={() => setOpenDropdown(item.id)}
+                      onMouseLeave={() => setOpenDropdown(null)}
+                    >
+                      <button
+                        className={`nav-dropdown-trigger ${isGroupActive ? 'active' : ''}`}
+                        onClick={() => setOpenDropdown(isOpen ? null : item.id)}
+                        aria-expanded={isOpen}
+                        aria-haspopup="true"
+                      >
+                        <i className={item.icon} aria-hidden="true"></i>
+                        <span>{item.label}</span>
+                        <i className={`fas fa-chevron-down dropdown-arrow ${isOpen ? 'rotated' : ''}`} aria-hidden="true"></i>
+                      </button>
+
+                      <div className="nav-dropdown-menu" role="menu">
+                        {item.items.map((subItem) => (
+                          <button
+                            key={subItem.id}
+                            onClick={() => handleNavClick(subItem.onClick)}
+                            className={`nav-dropdown-item ${isActive(subItem.path) ? 'active' : ''}`}
+                            style={{ '--nav-color': subItem.color }}
+                            role="menuitem"
+                            aria-current={isActive(subItem.path) ? 'page' : undefined}
+                          >
+                            <i className={subItem.icon} aria-hidden="true"></i>
+                            <span>{subItem.label}</span>
+                            {isActive(subItem.path) && (
+                              <span className="dropdown-item-indicator" aria-hidden="true"></span>
+                            )}
+                          </button>
+                        ))}
+                      </div>
                     </div>
-                  </div>
-                );
+                  );
+                }
+
+                return null;
               })}
             </div>
             
@@ -353,18 +339,14 @@ const TopBar = ({
       {mobileMenuOpen && (
         <nav className="mobile-nav" aria-label="Mobile navigation">
           <div className="mobile-nav-items">
-            {navGroups.map((group) => (
-              <React.Fragment key={group.id}>
-                <div className="mobile-nav-group">
-                  <div className="mobile-nav-group-header">
-                    <i className={group.icon} aria-hidden="true"></i>
-                    <span className="mobile-nav-group-label">{group.label}</span>
-                  </div>
-                  {group.items.map((item) => (
+            {navItems.map((item) => {
+              // ===== DIRECT LINK ITEMS (Mobile) =====
+              if (item.isDirect) {
+                return (
+                  <React.Fragment key={item.id}>
                     <button
-                      key={item.id}
                       onClick={() => handleNavClick(item.onClick)}
-                      className={`mobile-nav-item ${isActive(item.path) ? 'active' : ''}`}
+                      className={`mobile-nav-item direct-mobile-item ${isActive(item.path) ? 'active' : ''}`}
                       style={{ '--nav-color': item.color }}
                       aria-current={isActive(item.path) ? 'page' : undefined}
                     >
@@ -374,13 +356,49 @@ const TopBar = ({
                         <span className="mobile-nav-indicator" aria-hidden="true"></span>
                       )}
                     </button>
-                  ))}
-                </div>
-                {group.id !== navGroups[navGroups.length - 1].id && (
-                  <div className="mobile-nav-divider" aria-hidden="true"></div>
-                )}
-              </React.Fragment>
-            ))}
+                    {item.id !== navItems[navItems.length - 1].id && (
+                      <div className="mobile-nav-divider" aria-hidden="true"></div>
+                    )}
+                  </React.Fragment>
+                );
+              }
+
+              // ===== DROPDOWN ITEMS (Mobile - expanded) =====
+              if (item.isDropdown) {
+                return (
+                  <React.Fragment key={item.id}>
+                    <div className="mobile-nav-group">
+                      <div className="mobile-nav-group-header">
+                        <i className={item.icon} aria-hidden="true"></i>
+                        <span className="mobile-nav-group-label">{item.label}</span>
+                      </div>
+                      {item.items.map((subItem) => (
+                        <button
+                          key={subItem.id}
+                          onClick={() => handleNavClick(subItem.onClick)}
+                          className={`mobile-nav-item ${isActive(subItem.path) ? 'active' : ''}`}
+                          style={{ '--nav-color': subItem.color }}
+                          aria-current={isActive(subItem.path) ? 'page' : undefined}
+                        >
+                          <i className={subItem.icon} aria-hidden="true"></i>
+                          <span>{subItem.label}</span>
+                          {isActive(subItem.path) && (
+                            <span className="mobile-nav-indicator" aria-hidden="true"></span>
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                    {item.id !== navItems[navItems.length - 1].id && (
+                      <div className="mobile-nav-divider" aria-hidden="true"></div>
+                    )}
+                  </React.Fragment>
+                );
+              }
+
+              return null;
+            })}
+            
+            {/* Search Database in Mobile */}
             <div className="mobile-nav-divider" aria-hidden="true"></div>
             <div className="mobile-nav-actions">
               <LanguageSwitcher onLanguageChange={onLanguageChange} />
