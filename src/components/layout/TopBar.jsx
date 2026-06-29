@@ -173,14 +173,14 @@ const TopBar = ({
           onClick: onRegulatoryClick,
           color: '#e74c3c'
         },
-        { 
-          id: 'experts',
-          path: '/experts',
-          label: 'Experts Directory', 
-          icon: 'fas fa-users',
-          onClick: onExpertsClick,
-          color: '#D4A373'
-        },
+        // { 
+        //   id: 'experts',
+        //   path: '/experts',
+        //   label: 'Experts Directory', 
+        //   icon: 'fas fa-users',
+        //   onClick: onExpertsClick,
+        //   color: '#D4A373'
+        // },
       ]
     },
     {

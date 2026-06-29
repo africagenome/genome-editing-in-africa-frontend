@@ -379,6 +379,50 @@ class ApiService {
     return this.fetch(`/institutions/${id}/protocols/`);
   }
 
+  /**
+   * Fetch all institutions with automatic pagination
+   * This will fetch all pages of institutions and return the complete list
+   * 
+   * @param {Object} params - Query parameters (will be applied to each page)
+   * @param {number} params.limit - Items per page (default: 100)
+   * @param {number} params.offset - Starting offset (will be handled automatically)
+   * @param {number} maxPages - Maximum number of pages to fetch (default: 20)
+   * @returns {Promise<Array>} Complete list of all institutions
+   */
+  async getAllInstitutions(params = {}, maxPages = 20) {
+    const pageSize = params.limit || 100;
+    let allInstitutions = [];
+    let page = 1;
+    let nextPage = null;
+    
+    // Remove limit from params to avoid overriding pagination
+    const { limit, ...cleanParams } = this.cleanParams(params);
+    
+    do {
+      const offset = (page - 1) * pageSize;
+      const response = await this.getInstitutions({
+        ...cleanParams,
+        limit: pageSize,
+        offset: offset
+      });
+      
+      const institutions = response.results || response || [];
+      allInstitutions = [...allInstitutions, ...institutions];
+      
+      nextPage = response.next;
+      page++;
+      
+      // Safety limit to prevent infinite loops
+      if (page > maxPages) {
+        console.warn(`Reached max pages (${maxPages}) when fetching institutions`);
+        break;
+      }
+      
+    } while (nextPage);
+    
+    return allInstitutions;
+  }
+
   // ============ DASHBOARD ENDPOINTS ============
   async getDashboardStats() {
     try {
@@ -547,6 +591,152 @@ class ApiService {
 
   async getInfrastructureAssessmentsByCountry(code) {
     return this.fetch(`/infrastructure-assessments/by_country/?code=${code}`);
+  }
+
+  // ============ PRIORITY CROPS ENDPOINT ============
+  /**
+   * Get national priority crops that could benefit from GEd technology
+   * Endpoint: GET /api/v1/priority-crops/
+   * 
+   * @param {Object} params - Query parameters
+   * @param {number} params.country - Filter by country ID
+   * @param {number} params.organism - Filter by organism ID
+   * @param {string} params.ged_potential - Filter by GEd potential (High, Medium, Low)
+   * @param {number} params.limit - Number of results per page
+   * @param {number} params.offset - Pagination offset
+   * @returns {Promise<Object>} Priority crops data
+   */
+  async getPriorityCrops(params = {}) {
+    const cleanParams = this.cleanParams(params);
+    const queryString = new URLSearchParams(cleanParams).toString();
+    const endpoint = `/priority-crops/${queryString ? `?${queryString}` : ''}`;
+    return this.fetch(endpoint);
+  }
+
+  /**
+   * Fetch all priority crops with automatic pagination
+   * 
+   * @param {Object} params - Query parameters
+   * @param {number} maxPages - Maximum number of pages to fetch (default: 10)
+   * @returns {Promise<Array>} Complete list of all priority crops
+   */
+  async getAllPriorityCrops(params = {}, maxPages = 10) {
+    const pageSize = params.limit || 100;
+    let allCrops = [];
+    let page = 1;
+    let nextPage = null;
+    
+    const { limit, ...cleanParams } = this.cleanParams(params);
+    
+    do {
+      const offset = (page - 1) * pageSize;
+      const response = await this.getPriorityCrops({
+        ...cleanParams,
+        limit: pageSize,
+        offset: offset
+      });
+      
+      const crops = response.results || response || [];
+      allCrops = [...allCrops, ...crops];
+      
+      nextPage = response.next;
+      page++;
+      
+      if (page > maxPages) {
+        console.warn(`Reached max pages (${maxPages}) when fetching priority crops`);
+        break;
+      }
+      
+    } while (nextPage);
+    
+    return allCrops;
+  }
+
+  // ============ PRIORITY LIVESTOCK ENDPOINT (Future) ============
+  /**
+   * Get national priority livestock that could benefit from GEd technology
+   * Endpoint: GET /api/v1/priority-livestock/ (Future)
+   * 
+   * @param {Object} params - Query parameters
+   * @returns {Promise<Object>} Priority livestock data
+   */
+  async getPriorityLivestock(params = {}) {
+    const cleanParams = this.cleanParams(params);
+    const queryString = new URLSearchParams(cleanParams).toString();
+    const endpoint = `/priority-livestock/${queryString ? `?${queryString}` : ''}`;
+    return this.fetch(endpoint);
+  }
+
+  // ============ PRIORITY AGROFORESTRY ENDPOINT (Future) ============
+  /**
+   * Get national priority agroforestry species that could benefit from GEd technology
+   * Endpoint: GET /api/v1/priority-agroforestry/ (Future)
+   * 
+   * @param {Object} params - Query parameters
+   * @returns {Promise<Object>} Priority agroforestry data
+   */
+  async getPriorityAgroforestry(params = {}) {
+    const cleanParams = this.cleanParams(params);
+    const queryString = new URLSearchParams(cleanParams).toString();
+    const endpoint = `/priority-agroforestry/${queryString ? `?${queryString}` : ''}`;
+    return this.fetch(endpoint);
+  }
+
+  // ============ PRIORITY FISHERIES ENDPOINT (Future) ============
+  /**
+   * Get national priority fisheries that could benefit from GEd technology
+   * Endpoint: GET /api/v1/priority-fisheries/ (Future)
+   * 
+   * @param {Object} params - Query parameters
+   * @returns {Promise<Object>} Priority fisheries data
+   */
+  async getPriorityFisheries(params = {}) {
+    const cleanParams = this.cleanParams(params);
+    const queryString = new URLSearchParams(cleanParams).toString();
+    const endpoint = `/priority-fisheries/${queryString ? `?${queryString}` : ''}`;
+    return this.fetch(endpoint);
+  }
+
+  // ============ COMBINED PRIORITY AGRICULTURE ENDPOINT ============
+  /**
+   * Get all priority agriculture items (crops, livestock, agroforestry, fisheries)
+   * Combines data from multiple endpoints
+   * 
+   * @param {Object} params - Query parameters
+   * @param {number} params.country - Filter by country ID
+   * @returns {Promise<Object>} Combined priority agriculture data
+   */
+  async getPriorityAgriculture(params = {}) {
+    const countryId = params.country;
+    
+    try {
+      const [crops, livestock, agroforestry, fisheries] = await Promise.all([
+        this.getAllPriorityCrops({ country: countryId }),
+        this.getPriorityLivestock({ country: countryId, limit: 200 }),
+        this.getPriorityAgroforestry({ country: countryId, limit: 200 }),
+        this.getPriorityFisheries({ country: countryId, limit: 200 })
+      ]);
+
+      return {
+        crops: crops || [],
+        livestock: livestock.results || livestock || [],
+        agroforestry: agroforestry.results || agroforestry || [],
+        fisheries: fisheries.results || fisheries || [],
+        total: (crops || []).length + 
+               (livestock.results || livestock || []).length + 
+               (agroforestry.results || agroforestry || []).length + 
+               (fisheries.results || fisheries || []).length
+      };
+    } catch (error) {
+      console.error('Error fetching priority agriculture data:', error);
+      return {
+        crops: [],
+        livestock: [],
+        agroforestry: [],
+        fisheries: [],
+        total: 0
+      };
+    }
   }
 }
 

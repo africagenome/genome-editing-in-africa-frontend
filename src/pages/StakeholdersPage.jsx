@@ -170,17 +170,25 @@ const StakeholdersPage = ({ onBackClick }) => {
   const [error, setError] = useState(null);
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [isMobileFilterOpen, setIsMobileFilterOpen] = useState(false);
-  const [viewMode, setViewMode] = useState('grid'); // 'grid' | 'list'
+  const [viewMode, setViewMode] = useState('grid');
+  
+  // ===== PAGINATION STATE =====
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(9);
+  const [totalCount, setTotalCount] = useState(0);
+
   const [filterOptions, setFilterOptions] = useState({
     categories: [],
     countries: [],
     types: []
   });
+  
+  // ===== STATS - UPDATED =====
   const [stats, setStats] = useState({
     total: 0,
     countries: 0,
     international: 0,
-    regions: 0
+    active_institutions: 0  // Replaced 'regions' with 'active_institutions'
   });
 
   // Category mapping
@@ -256,6 +264,7 @@ const StakeholdersPage = ({ onBackClick }) => {
   // ===== VIEW MODE HANDLER =====
   const toggleViewMode = (mode) => {
     setViewMode(mode);
+    setCurrentPage(1);
   };
 
   // ===== FETCH INSTITUTIONS =====
@@ -264,10 +273,11 @@ const StakeholdersPage = ({ onBackClick }) => {
       setLoading(true);
       setError(null);
 
-      const response = await apiService.getInstitutions({ limit: 100 });
-      const institutions = response.results || response || [];
+      const allInstitutions = await apiService.getAllInstitutions({ limit: 100 });
+      
+      console.log(`Total institutions fetched: ${allInstitutions.length}`);
 
-      const transformedData = institutions.map(inst => {
+      const transformedData = allInstitutions.map(inst => {
         const category = categoryMap[inst.type] || inst.type || 'Research';
         const countryNames = getCountryNames(inst);
         const primaryCountry = countryNames[0] || 'No country specified';
@@ -303,6 +313,8 @@ const StakeholdersPage = ({ onBackClick }) => {
 
       setStakeholders(transformedData);
       setFilteredStakeholders(transformedData);
+      setTotalCount(transformedData.length);
+      setCurrentPage(1);
 
       // Build filter options
       const categories = [...new Set(transformedData.map(s => s.category))].map(cat => ({
@@ -333,15 +345,16 @@ const StakeholdersPage = ({ onBackClick }) => {
 
       setFilterOptions({ categories, countries });
 
+      // ===== CALCULATE STATS - UPDATED =====
       const uniqueCountries = allCountries.size;
       const internationalCount = transformedData.filter(s => s.category === 'International').length;
-      const uniqueRegions = new Set(transformedData.map(s => s.region));
+      const activeInstitutions = transformedData.filter(s => s.is_active === true).length; // NEW
 
       setStats({
         total: transformedData.length,
         countries: uniqueCountries,
         international: internationalCount,
-        regions: uniqueRegions.size
+        active_institutions: activeInstitutions // Changed from 'regions'
       });
 
     } catch (err) {
@@ -384,17 +397,80 @@ const StakeholdersPage = ({ onBackClick }) => {
     }
     
     setFilteredStakeholders(filtered);
+    setTotalCount(filtered.length);
+    setCurrentPage(1);
   }, [stakeholders, selectedCategory, selectedCountry, searchTerm]);
 
   useEffect(() => {
     filterStakeholders();
   }, [filterStakeholders]);
 
+  // ===== GET CURRENT PAGE ITEMS =====
+  const getCurrentPageItems = useCallback(() => {
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    const endIndex = startIndex + itemsPerPage;
+    return filteredStakeholders.slice(startIndex, endIndex);
+  }, [filteredStakeholders, currentPage, itemsPerPage]);
+
+  // ===== PAGINATION HELPERS =====
+  const totalPages = Math.ceil(totalCount / itemsPerPage);
+  const currentItems = getCurrentPageItems();
+
+  const handlePageChange = (page) => {
+    setCurrentPage(page);
+    const resultsHeader = document.querySelector('.results-header');
+    if (resultsHeader) {
+      resultsHeader.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  };
+
+  const handleItemsPerPageChange = (e) => {
+    const newItemsPerPage = parseInt(e.target.value);
+    setItemsPerPage(newItemsPerPage);
+    setCurrentPage(1);
+  };
+
+  const getPageNumbers = () => {
+    const pageNumbers = [];
+    const maxVisible = 5;
+    
+    if (totalPages <= maxVisible) {
+      for (let i = 1; i <= totalPages; i++) {
+        pageNumbers.push(i);
+      }
+    } else {
+      if (currentPage <= 3) {
+        for (let i = 1; i <= 4; i++) {
+          pageNumbers.push(i);
+        }
+        pageNumbers.push('...');
+        pageNumbers.push(totalPages);
+      } else if (currentPage >= totalPages - 2) {
+        pageNumbers.push(1);
+        pageNumbers.push('...');
+        for (let i = totalPages - 3; i <= totalPages; i++) {
+          pageNumbers.push(i);
+        }
+      } else {
+        pageNumbers.push(1);
+        pageNumbers.push('...');
+        for (let i = currentPage - 1; i <= currentPage + 1; i++) {
+          pageNumbers.push(i);
+        }
+        pageNumbers.push('...');
+        pageNumbers.push(totalPages);
+      }
+    }
+    
+    return pageNumbers;
+  };
+
   // ===== RESET FILTERS =====
   const resetFilters = () => {
     setSelectedCategory('');
     setSelectedCountry('');
     setSearchTerm('');
+    setCurrentPage(1);
   };
 
   // ===== COUNT ACTIVE FILTERS =====
@@ -455,7 +531,7 @@ const StakeholdersPage = ({ onBackClick }) => {
             </div>
           </div>
 
-          {/* ===== STATS - IMPROVED VISIBILITY ===== */}
+          {/* ===== STATS - UPDATED ===== */}
           {!loading && !error && stats.total > 0 && (
             <div className="stats-grid">
               <div className="stat-card">
@@ -486,12 +562,12 @@ const StakeholdersPage = ({ onBackClick }) => {
                 </div>
               </div>
               <div className="stat-card">
-                <div className="stat-icon-wrapper funding">
-                  <i className="fas fa-flag"></i>
+                <div className="stat-icon-wrapper active-institutions">
+                  <i className="fas fa-check-circle"></i>
                 </div>
                 <div className="stat-info">
-                  <span className="stat-number">{stats.regions}</span>
-                  <span className="stat-label">Regions</span>
+                  <span className="stat-number">{stats.active_institutions}</span>
+                  <span className="stat-label">Active Institutions</span>
                 </div>
               </div>
             </div>
@@ -577,7 +653,7 @@ const StakeholdersPage = ({ onBackClick }) => {
           <div className="results-header">
             <div className="results-info">
               <span className="results-count">
-                <strong>{filteredStakeholders.length}</strong> stakeholders found
+                <strong>{totalCount}</strong> stakeholders found
               </span>
               {activeFilterCount > 0 && (
                 <span className="active-filters-badge">
@@ -630,83 +706,148 @@ const StakeholdersPage = ({ onBackClick }) => {
           ) : (
             <>
               <div className={`stakeholders-grid ${viewMode === 'list' ? 'list-view' : 'grid-view'}`}>
-                {filteredStakeholders.map((stakeholder, index) => (
-                  <div 
-                    key={stakeholder.id} 
-                    className="stakeholder-card"
-                    onClick={() => setSelectedStakeholder(stakeholder)}
-                    style={{ animationDelay: `${index * 0.05}s` }}
-                    role="button"
-                    tabIndex={0}
-                    onKeyDown={(e) => e.key === 'Enter' && setSelectedStakeholder(stakeholder)}
-                    aria-label={`View details for ${stakeholder.name}`}
-                  >
-                    <div className="stakeholder-card-top">
-                      <div className="stakeholder-icon">
-                        {stakeholder.logo ? (
-                          <img src={stakeholder.logo} alt={stakeholder.name} className="stakeholder-logo" />
-                        ) : (
-                          <i className={`fas ${stakeholder.icon || 'fa-handshake'}`} style={{ color: categoryColors[stakeholder.category] || '#5B7E96' }}></i>
+                {currentItems.length === 0 ? (
+                  <div className="no-results">
+                    <i className="fas fa-users empty-icon"></i>
+                    <h3>No stakeholders found</h3>
+                    <p>Try adjusting your search or filter criteria.</p>
+                    <button className="clear-filters-btn" onClick={resetFilters}>
+                      <i className="fas fa-undo"></i> Clear all filters
+                    </button>
+                  </div>
+                ) : (
+                  currentItems.map((stakeholder, index) => (
+                    <div 
+                      key={stakeholder.id} 
+                      className="stakeholder-card"
+                      onClick={() => setSelectedStakeholder(stakeholder)}
+                      style={{ animationDelay: `${index * 0.05}s` }}
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={(e) => e.key === 'Enter' && setSelectedStakeholder(stakeholder)}
+                      aria-label={`View details for ${stakeholder.name}`}
+                    >
+                      <div className="stakeholder-card-top">
+                        <div className="stakeholder-icon">
+                          {stakeholder.logo ? (
+                            <img src={stakeholder.logo} alt={stakeholder.name} className="stakeholder-logo" />
+                          ) : (
+                            <i className={`fas ${stakeholder.icon || 'fa-handshake'}`} style={{ color: categoryColors[stakeholder.category] || '#5B7E96' }}></i>
+                          )}
+                        </div>
+                        <span 
+                          className="stakeholder-category-badge"
+                          style={{ backgroundColor: categoryColors[stakeholder.category] || '#5B7E96' }}
+                        >
+                          {stakeholder.category}
+                        </span>
+                      </div>
+
+                      <div className="stakeholder-info">
+                        <h3>{stakeholder.name}</h3>
+                        {stakeholder.acronym && (
+                          <span className="stakeholder-acronym">{stakeholder.acronym}</span>
                         )}
                       </div>
-                      <span 
-                        className="stakeholder-category-badge"
-                        style={{ backgroundColor: categoryColors[stakeholder.category] || '#5B7E96' }}
-                      >
-                        {stakeholder.category}
-                      </span>
-                    </div>
 
-                    <div className="stakeholder-info">
-                      <h3>{stakeholder.name}</h3>
-                      {stakeholder.acronym && (
-                        <span className="stakeholder-acronym">{stakeholder.acronym}</span>
-                      )}
-                    </div>
+                      <div className="stakeholder-desc">
+                        {stakeholder.description && stakeholder.description.length > 100 
+                          ? `${stakeholder.description.substring(0, 100)}...` 
+                          : stakeholder.description || 'No description available'}
+                      </div>
 
-                    <div className="stakeholder-desc">
-                      {stakeholder.description && stakeholder.description.length > 100 
-                        ? `${stakeholder.description.substring(0, 100)}...` 
-                        : stakeholder.description || 'No description available'}
-                    </div>
-
-                    <div className="stakeholder-meta">
-                      <span className="meta-item">
-                        <i className="fas fa-map-marker-alt"></i>
-                        {stakeholder.countries_string}
-                      </span>
-                      {stakeholder.projects > 0 && (
+                      <div className="stakeholder-meta">
                         <span className="meta-item">
-                          <i className="fas fa-project-diagram"></i>
-                          {stakeholder.projects} projects
+                          <i className="fas fa-map-marker-alt"></i>
+                          {stakeholder.countries_string}
                         </span>
-                      )}
-                    </div>
+                        {stakeholder.projects > 0 && (
+                          <span className="meta-item">
+                            <i className="fas fa-project-diagram"></i>
+                            {stakeholder.projects} projects
+                          </span>
+                        )}
+                      </div>
 
-                    <div className="stakeholder-tags">
-                      {stakeholder.tags && stakeholder.tags.slice(0, 3).map((tag, idx) => (
-                        <span key={idx} className="tag">#{tag}</span>
+                      <div className="stakeholder-tags">
+                        {stakeholder.tags && stakeholder.tags.slice(0, 3).map((tag, idx) => (
+                          <span key={idx} className="tag">#{tag}</span>
+                        ))}
+                      </div>
+
+                      <div className="stakeholder-footer">
+                        <span className="view-details">
+                          View Details <i className="fas fa-arrow-right"></i>
+                        </span>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+
+              {/* ===== PAGINATION ===== */}
+              {totalPages > 1 && (
+                <div className="pagination-container">
+                  <div className="pagination-info">
+                    <span>
+                      Showing <strong>{(currentPage - 1) * itemsPerPage + 1}</strong> - 
+                      <strong> {Math.min(currentPage * itemsPerPage, totalCount)}</strong> of 
+                      <strong> {totalCount}</strong> stakeholders
+                    </span>
+                    <div className="pagination-items-per-page">
+                      <label htmlFor="items-per-page">Show:</label>
+                      <select 
+                        id="items-per-page"
+                        value={itemsPerPage} 
+                        onChange={handleItemsPerPageChange}
+                        className="items-per-page-select"
+                      >
+                        <option value={6}>6</option>
+                        <option value={9}>9</option>
+                        <option value={12}>12</option>
+                        <option value={18}>18</option>
+                        <option value={24}>24</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="pagination">
+                    <button
+                      onClick={() => handlePageChange(currentPage - 1)}
+                      disabled={currentPage === 1}
+                      className="pagination-btn"
+                      aria-label="Previous page"
+                    >
+                      <i className="fas fa-chevron-left"></i> Previous
+                    </button>
+
+                    <div className="pagination-pages">
+                      {getPageNumbers().map((page, index) => (
+                        page === '...' ? (
+                          <span key={`ellipsis-${index}`} className="pagination-ellipsis">…</span>
+                        ) : (
+                          <button
+                            key={page}
+                            className={`pagination-page ${currentPage === page ? 'active' : ''}`}
+                            onClick={() => handlePageChange(page)}
+                            aria-label={`Go to page ${page}`}
+                            aria-current={currentPage === page ? 'page' : undefined}
+                          >
+                            {page}
+                          </button>
+                        )
                       ))}
                     </div>
 
-                    <div className="stakeholder-footer">
-                      <span className="view-details">
-                        View Details <i className="fas fa-arrow-right"></i>
-                      </span>
-                    </div>
+                    <button
+                      onClick={() => handlePageChange(currentPage + 1)}
+                      disabled={currentPage === totalPages}
+                      className="pagination-btn"
+                      aria-label="Next page"
+                    >
+                      Next <i className="fas fa-chevron-right"></i>
+                    </button>
                   </div>
-                ))}
-              </div>
-
-              {/* No Results */}
-              {filteredStakeholders.length === 0 && (
-                <div className="no-results">
-                  <i className="fas fa-users empty-icon"></i>
-                  <h3>No stakeholders found</h3>
-                  <p>Try adjusting your search or filter criteria.</p>
-                  <button className="clear-filters-btn" onClick={resetFilters}>
-                    <i className="fas fa-undo"></i> Clear all filters
-                  </button>
                 </div>
               )}
             </>

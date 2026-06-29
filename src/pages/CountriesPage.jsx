@@ -7,156 +7,6 @@ import apiService from '../services/apiService';
 import './CountriesPage.css';
 
 // ============================================
-// SEARCHABLE DROPDOWN COMPONENT
-// ============================================
-const SearchableDropdown = ({ 
-  options = [], 
-  value = '', 
-  onChange, 
-  placeholder = 'Search...', 
-  label = '', 
-  icon = null,
-  showCounts = true,
-  disabled = false,
-  compact = false
-}) => {
-  const [isOpen, setIsOpen] = useState(false);
-  const [searchTerm, setSearchTerm] = useState('');
-  const dropdownRef = useRef(null);
-
-  const filteredOptions = (options || []).filter(opt => {
-    if (!opt) return false;
-    const labelStr = opt.label?.toString()?.toLowerCase() || '';
-    const searchStr = searchTerm?.toString()?.toLowerCase() || '';
-    return labelStr.includes(searchStr);
-  });
-
-  const selectedOption = (options || []).find(opt => {
-    if (!opt) return false;
-    const optValue = opt.value?.toString() || '';
-    const currentValue = value?.toString() || '';
-    return optValue === currentValue;
-  });
-
-  useEffect(() => {
-    const handleClickOutside = (event) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
-        setIsOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
-
-  useEffect(() => {
-    const handleEscape = (e) => {
-      if (e.key === 'Escape') setIsOpen(false);
-    };
-    document.addEventListener('keydown', handleEscape);
-    return () => document.removeEventListener('keydown', handleEscape);
-  }, []);
-
-  const handleSelect = (option) => {
-    onChange(option?.value || '');
-    setIsOpen(false);
-    setSearchTerm('');
-  };
-
-  const handleKeyDown = (e) => {
-    if (e.key === 'Enter' && filteredOptions.length > 0) {
-      handleSelect(filteredOptions[0]);
-    }
-  };
-
-  const displayValue = selectedOption?.label?.toString() || '';
-
-  return (
-    <div className={`searchable-dropdown ${compact ? 'compact' : ''}`} ref={dropdownRef}>
-      <div className="dropdown-label">
-        {icon && <i className={icon}></i>}
-        <span>{label}</span>
-        {selectedOption && !isOpen && (
-          <span className="dropdown-selected-value">{displayValue}</span>
-        )}
-      </div>
-      <div 
-        className={`dropdown-input-wrapper ${isOpen ? 'focused' : ''} ${disabled ? 'disabled' : ''}`}
-        onClick={() => !disabled && setIsOpen(!isOpen)}
-        role="combobox"
-        aria-expanded={isOpen}
-        aria-haspopup="listbox"
-      >
-        <input
-          type="text"
-          placeholder={placeholder}
-          value={isOpen ? searchTerm : displayValue}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          onFocus={() => !disabled && setIsOpen(true)}
-          onKeyDown={handleKeyDown}
-          className="dropdown-input"
-          disabled={disabled}
-          readOnly={!isOpen}
-          aria-label={`Search ${label}`}
-          autoComplete="off"
-        />
-        <i className={`fas fa-chevron-${isOpen ? 'up' : 'down'} dropdown-arrow`}></i>
-        {selectedOption && !isOpen && value && (
-          <button 
-            className="dropdown-clear"
-            onClick={(e) => {
-              e.stopPropagation();
-              onChange('');
-            }}
-            aria-label={`Clear ${label} filter`}
-          >
-            <i className="fas fa-times-circle"></i>
-          </button>
-        )}
-      </div>
-      {isOpen && (
-        <div className="dropdown-options" role="listbox">
-          <div 
-            className={`dropdown-option all-option ${!value ? 'selected' : ''}`} 
-            onClick={() => handleSelect({ value: '' })}
-            role="option"
-            aria-selected={!value}
-          >
-            <span>All {label}</span>
-            {!value && <i className="fas fa-check option-check"></i>}
-          </div>
-          {filteredOptions.length === 0 ? (
-            <div className="dropdown-no-results">No options found</div>
-          ) : (
-            filteredOptions.map((option, index) => {
-              const isSelected = value?.toString() === option.value?.toString();
-              const optionKey = option.value?.toString() || `option-${index}`;
-              return (
-                <div
-                  key={optionKey}
-                  className={`dropdown-option ${isSelected ? 'selected' : ''}`}
-                  onClick={() => handleSelect(option)}
-                  role="option"
-                  aria-selected={isSelected}
-                >
-                  {option.color && <span className="status-color-dot" style={{ backgroundColor: option.color }}></span>}
-                  <span>{option.label?.toString() || 'Unknown'}</span>
-                  {showCounts && option.count !== undefined && (
-                    <span className="option-count">{option.count}</span>
-                  )}
-                  {isSelected && (
-                    <i className="fas fa-check option-check"></i>
-                  )}
-                </div>
-              );
-            })
-          )}
-        </div>
-      )}
-    </div>
-  );
-};
-
-// ============================================
 // MAIN COUNTRIES COMPONENT
 // ============================================
 const CountriesPage = ({ onBackClick }) => {
@@ -166,9 +16,8 @@ const CountriesPage = ({ onBackClick }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [countries, setCountries] = useState([]);
-  const [isMobileFilterOpen, setIsMobileFilterOpen] = useState(false);
   
-  // Filter states
+  // Filter states - kept for internal use but no sidebar
   const [selectedRegion, setSelectedRegion] = useState('');
   const [selectedStatus, setSelectedStatus] = useState('');
   const [selectedSector, setSelectedSector] = useState('');
@@ -180,10 +29,25 @@ const CountriesPage = ({ onBackClick }) => {
     sectors: []
   });
 
+  // Priority Crops State
+  const [allPriorityCrops, setAllPriorityCrops] = useState([]);
+
   const trendChartRef = useRef(null);
   const focusChartRef = useRef(null);
   const readinessChartRef = useRef(null);
   const chartInstances = useRef({ trend: null, focus: null, readiness: null });
+
+  // ===== FETCH PRIORITY CROPS =====
+  const fetchPriorityCrops = useCallback(async () => {
+    try {
+      const response = await apiService.getPriorityCrops({ limit: 500 });
+      const cropsData = response.results || response || [];
+      setAllPriorityCrops(cropsData);
+    } catch (err) {
+      console.warn('Could not fetch priority crops:', err);
+      setAllPriorityCrops([]);
+    }
+  }, []);
 
   // ===== FILTER OPTIONS =====
   useEffect(() => {
@@ -235,7 +99,8 @@ const CountriesPage = ({ onBackClick }) => {
       }
     };
     fetchCountries();
-  }, [contextCountries]);
+    fetchPriorityCrops();
+  }, [contextCountries, fetchPriorityCrops]);
 
   // ===== FETCH COUNTRY DETAILS =====
   useEffect(() => {
@@ -271,9 +136,6 @@ const CountriesPage = ({ onBackClick }) => {
     return results;
   }, [countries, searchTerm, selectedRegion, selectedStatus, selectedSector]);
 
-  // ===== COUNT ACTIVE FILTERS =====
-  const activeFilterCount = [selectedRegion, selectedStatus, selectedSector, searchTerm].filter(f => f).length;
-
   // ===== RESET FILTERS =====
   const resetFilters = () => {
     setSelectedRegion('');
@@ -282,10 +144,19 @@ const CountriesPage = ({ onBackClick }) => {
     setSearchTerm('');
   };
 
-  // ===== TOGGLE FILTER =====
-  const toggleFilterSidebar = () => {
-    setIsMobileFilterOpen(!isMobileFilterOpen);
-  };
+  // ===== GET PRIORITY CROPS FOR A COUNTRY =====
+  const getCountryPriorityCrops = useCallback((country) => {
+    if (!country || !allPriorityCrops.length) return [];
+    
+    const crops = allPriorityCrops.filter(crop => {
+      if (crop.country === country.id) return true;
+      if (crop.country_name?.toLowerCase() === country.name?.toLowerCase()) return true;
+      if (crop.country_code?.toLowerCase() === country.code?.toLowerCase()) return true;
+      return false;
+    });
+    
+    return crops;
+  }, [allPriorityCrops]);
 
   // ===== FETCH COUNTRY DETAILS =====
   const fetchCountryDetails = async (country) => {
@@ -303,6 +174,23 @@ const CountriesPage = ({ onBackClick }) => {
       const organismsResponse = await apiService.getCountryOrganisms(country.id);
       const organisms = organismsResponse.results || organismsResponse || [];
 
+      // Get priority crops for this country
+      const countryCrops = getCountryPriorityCrops(country);
+
+      // Get commercial projects count
+      let commercialProjects = 0;
+      try {
+        const statsResponse = await apiService.getProjectStats();
+        if (statsResponse && statsResponse.by_country) {
+          const countryStats = statsResponse.by_country.find(c => c.country__name === country.name);
+          if (countryStats) {
+            commercialProjects = projects.filter(p => p.status === 'commercial').length;
+          }
+        }
+      } catch (statsErr) {
+        commercialProjects = projects.filter(p => p.status === 'commercial').length;
+      }
+
       const enrichedData = {
         id: country.id,
         name: country.name,
@@ -314,12 +202,13 @@ const CountriesPage = ({ onBackClick }) => {
         metrics: {
           projects: country.active_projects || projects.length,
           cfts: country.confined_field_trials || 0,
+          commercial: commercialProjects,
           publications: country.publications_count || publications.length,
           institutions: country.institutions_count || 0,
           researchers: country.researchers_trained || 0,
           readiness: country.readiness_score || 0,
-          funding: country.funding_received || 0,
-          collaborations: country.international_alignment ? 1 : 0
+          collaborations: country.international_alignment ? 1 : 0,
+          priority_crops: countryCrops.length || 0
         },
         trends: buildTrends(projects, publications),
         focus: buildFocusAreas(projects),
@@ -334,7 +223,8 @@ const CountriesPage = ({ onBackClick }) => {
         },
         publications: publications.slice(0, 5),
         experts: experts.slice(0, 5),
-        organisms: organisms.slice(0, 5)
+        organisms: organisms.slice(0, 5),
+        priorityCrops: countryCrops
       };
 
       setCountryData(enrichedData);
@@ -458,6 +348,24 @@ const CountriesPage = ({ onBackClick }) => {
     if (score >= 0.7) return { level: 'Advanced', color: '#10B981', bg: 'rgba(16, 185, 129, 0.15)' };
     if (score >= 0.55) return { level: 'Intermediate', color: '#F59E0B', bg: 'rgba(245, 158, 11, 0.15)' };
     return { level: 'Foundational', color: '#EF4444', bg: 'rgba(239, 68, 68, 0.15)' };
+  };
+
+  const getGedPotentialBadgeClass = (potential) => {
+    const map = {
+      'High': 'bg-success',
+      'Medium': 'bg-warning',
+      'Low': 'bg-danger'
+    };
+    return map[potential] || 'bg-secondary';
+  };
+
+  const getGedPotentialIcon = (potential) => {
+    const map = {
+      'High': 'fa-arrow-up text-success',
+      'Medium': 'fa-minus text-warning',
+      'Low': 'fa-arrow-down text-danger'
+    };
+    return map[potential] || 'fa-circle text-secondary';
   };
 
   // ===== CHART INITIALIZATION =====
@@ -611,183 +519,36 @@ const CountriesPage = ({ onBackClick }) => {
                 Comprehensive genome editing landscape data for African nations
               </p>
             </div>
-            <div className="header-right">
-              <button 
-                className={`filter-toggle-btn ${isMobileFilterOpen ? 'active' : ''}`}
-                onClick={toggleFilterSidebar}
-                aria-expanded={isMobileFilterOpen}
-                aria-label="Toggle filters"
-              >
-                <i className="fas fa-sliders-h"></i>
-                <span>Filters</span>
-                {activeFilterCount > 0 && (
-                  <span className="filter-badge">{activeFilterCount}</span>
-                )}
-                <i className={`fas fa-chevron-${isMobileFilterOpen ? 'up' : 'down'}`}></i>
-              </button>
-            </div>
           </div>
 
-          {/* ===== STATS ===== */}
-          {!loading && !error && countries.length > 0 && (
-            <div className="stats-grid">
-              <div className="stat-card">
-                <div className="stat-icon-wrapper">
-                  <i className="fas fa-globe-africa"></i>
-                </div>
-                <div className="stat-info">
-                  <span className="stat-number">{countries.length}</span>
-                  <span className="stat-label">Countries</span>
-                </div>
-              </div>
-              <div className="stat-card">
-                <div className="stat-icon-wrapper active">
-                  <i className="fas fa-flag"></i>
-                </div>
-                <div className="stat-info">
-                  <span className="stat-number">
-                    {countries.filter(c => c.biosafety_status === 'functional').length}
-                  </span>
-                  <span className="stat-label">Functional Frameworks</span>
-                </div>
-              </div>
-              <div className="stat-card">
-                <div className="stat-icon-wrapper cft">
-                  <i className="fas fa-flask"></i>
-                </div>
-                <div className="stat-info">
-                  <span className="stat-number">
-                    {countries.reduce((sum, c) => sum + (c.confined_field_trials || 0), 0)}
-                  </span>
-                  <span className="stat-label">Field Trials</span>
-                </div>
-              </div>
-              <div className="stat-card">
-                <div className="stat-icon-wrapper funding">
-                  <i className="fas fa-users"></i>
-                </div>
-                <div className="stat-info">
-                  <span className="stat-number">
-                    {countries.reduce((sum, c) => sum + (c.researchers_trained || 0), 0)}
-                  </span>
-                  <span className="stat-label">Researchers Trained</span>
-                </div>
-              </div>
-            </div>
-          )}
+         
         </div>
       </header>
 
       {/* ===== MAIN CONTENT ===== */}
       <div className="container main-content">
-        {/* ===== FILTER SIDEBAR ===== */}
-        <aside className={`filter-sidebar ${isMobileFilterOpen ? 'open' : ''}`}>
-          <div className="filter-sidebar-header">
-            <h3>
-              <i className="fas fa-sliders-h"></i> Filters
-              {activeFilterCount > 0 && (
-                <span className="filter-count-badge">{activeFilterCount} active</span>
-              )}
-            </h3>
-            <button 
-              className="close-sidebar" 
-              onClick={() => setIsMobileFilterOpen(false)}
-              aria-label="Close filters"
-            >
-              <i className="fas fa-times"></i>
-            </button>
-          </div>
-
-          <div className="filter-sidebar-body">
-            {/* Search */}
-            <div className="filter-group">
-              <label className="filter-label" htmlFor="search-countries">
-                <i className="fas fa-search"></i> Search
-              </label>
-              <input
-                id="search-countries"
-                type="text"
-                placeholder="Search countries..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="filter-input"
-                aria-label="Search countries"
-              />
-            </div>
-
-            {/* Region */}
-            <div className="filter-group">
-              <SearchableDropdown
-                label="Region"
-                icon="fas fa-globe"
-                placeholder="Search regions..."
-                options={filterOptions.regions}
-                value={selectedRegion}
-                onChange={(value) => setSelectedRegion(value)}
-                showCounts={true}
-              />
-            </div>
-
-            {/* Status */}
-            <div className="filter-group">
-              <SearchableDropdown
-                label="Regulatory Status"
-                icon="fas fa-gavel"
-                placeholder="Search status..."
-                options={filterOptions.statuses}
-                value={selectedStatus}
-                onChange={(value) => setSelectedStatus(value)}
-                showCounts={true}
-              />
-            </div>
-
-            {/* Sector */}
-            <div className="filter-group">
-              <SearchableDropdown
-                label="Sector"
-                icon="fas fa-industry"
-                placeholder="Search sectors..."
-                options={filterOptions.sectors}
-                value={selectedSector}
-                onChange={(value) => setSelectedSector(value)}
-                showCounts={true}
-              />
-            </div>
-
-            <button 
-              className="reset-filters-btn" 
-              onClick={resetFilters}
-              aria-label="Reset all filters"
-            >
-              <i className="fas fa-undo"></i> Reset All Filters
-            </button>
-          </div>
-        </aside>
-
         {/* ===== COUNTRY CONTENT ===== */}
-        <main className="countries-content">
+        <main className="countries-content-full">
+          {/* Results Header with Search */}
           <div className="results-header">
             <div className="results-info">
               <span className="results-count">
                 <strong>{filteredCountries.length}</strong> countries found
               </span>
-              {activeFilterCount > 0 && (
-                <span className="active-filters-badge">
-                  <i className="fas fa-filter"></i>
-                  {activeFilterCount} filter{activeFilterCount > 1 ? 's' : ''} active
-                </span>
-              )}
             </div>
-            <div className="results-actions">
-              <button 
-                className="view-toggle"
-                onClick={toggleFilterSidebar}
-                aria-expanded={isMobileFilterOpen}
-              >
-                <i className={`fas fa-${isMobileFilterOpen ? 'times' : 'sliders-h'}`}></i>
-                {isMobileFilterOpen ? 'Hide Filters' : 'Show Filters'}
-              </button>
-            </div>
+            {/* <div className="results-actions">
+              <div className="search-box-inline">
+                <i className="fas fa-search"></i>
+                <input
+                  type="text"
+                  placeholder="Search countries..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="search-input-inline"
+                  aria-label="Search countries"
+                />
+              </div>
+            </div> */}
           </div>
 
           {error ? (
@@ -821,9 +582,7 @@ const CountriesPage = ({ onBackClick }) => {
                     </option>
                   ))}
                 </select>
-                <button className="export-btn" onClick={() => alert(`Exporting ${selectedCountry?.name} Genome Editing Profile Report`)}>
-                  <i className="fas fa-download"></i> Export Report
-                </button>
+               
               </div>
 
               {loading ? (
@@ -860,20 +619,22 @@ const CountriesPage = ({ onBackClick }) => {
                         <div className="kpi-label">Active Projects</div>
                       </div>
                     </div>
+                   
                     <div className="kpi-card">
-                      <div className="kpi-icon"><i className="fas fa-flask"></i></div>
+                      <div className="kpi-icon"><i className="fas fa-rocket"></i></div>
                       <div className="kpi-content">
-                        <div className="kpi-value">{countryData.metrics.cfts}</div>
-                        <div className="kpi-label">Field Trials</div>
+                        <div className="kpi-value">{countryData.metrics.commercial || 0}</div>
+                        <div className="kpi-label">Commercial Release</div>
                       </div>
                     </div>
                     <div className="kpi-card">
-                      <div className="kpi-icon"><i className="fas fa-file-alt"></i></div>
+                      <div className="kpi-icon"><i className="fas fa-seedling"></i></div>
                       <div className="kpi-content">
-                        <div className="kpi-value">{countryData.metrics.publications}</div>
-                        <div className="kpi-label">Publications</div>
+                        <div className="kpi-value">{countryData.metrics.priority_crops || 0}</div>
+                        <div className="kpi-label">Priority Crops/Livestock</div>
                       </div>
                     </div>
+                    
                     <div className="kpi-card">
                       <div className="kpi-icon"><i className="fas fa-university"></i></div>
                       <div className="kpi-content">
@@ -881,36 +642,22 @@ const CountriesPage = ({ onBackClick }) => {
                         <div className="kpi-label">Institutions</div>
                       </div>
                     </div>
-                    <div className="kpi-card">
-                      <div className="kpi-icon"><i className="fas fa-user-graduate"></i></div>
-                      <div className="kpi-content">
-                        <div className="kpi-value">{countryData.metrics.researchers}</div>
-                        <div className="kpi-label">Researchers</div>
-                      </div>
-                    </div>
-                    <div className="kpi-card">
-                      <div className="kpi-icon"><i className="fas fa-coins"></i></div>
-                      <div className="kpi-content">
-                        <div className="kpi-value">${(countryData.metrics.funding || 0).toLocaleString()}</div>
-                        <div className="kpi-label">Total Funding</div>
-                      </div>
-                    </div>
                   </div>
 
                   {/* Charts Row */}
                   <div className="charts-row">
                     <div className="chart-card">
-                      <h3><i className="fas fa-chart-line"></i> Project & Publication Trends</h3>
+                      <h3><i className="fas fa-chart-line"></i> Project Trends</h3>
                       <div className="chart-container">
                         <canvas id="trendChart"></canvas>
                       </div>
                     </div>
-                    <div className="chart-card">
+                    {/* <div className="chart-card">
                       <h3><i className="fas fa-chart-pie"></i> Research Focus Areas</h3>
                       <div className="chart-container">
                         <canvas id="focusChart"></canvas>
                       </div>
-                    </div>
+                    </div> */}
                     <div className="chart-card">
                       <h3><i className="fas fa-tachometer-alt"></i> Readiness Score</h3>
                       <div className="gauge-container">
@@ -921,6 +668,79 @@ const CountriesPage = ({ onBackClick }) => {
                         </div>
                       </div>
                     </div>
+                  </div>
+
+                  {/* ===== NATIONAL PRIORITY CROPS SECTION ===== */}
+                  <div className="info-card priority-crops-card">
+                    <h3>
+                      <i className="fas fa-seedling"></i> National Priority Crops/Livestock
+                      <span className="badge-crops">{countryData.priorityCrops?.length || 0}</span>
+                    </h3>
+                    
+                    {countryData.priorityCrops && countryData.priorityCrops.length > 0 ? (
+                      <>
+                        <div className="priority-crops-grid">
+                          {countryData.priorityCrops.map((crop, idx) => (
+                            <div key={idx} className="crop-card">
+                              <div className="crop-header">
+                                <div className="crop-icon">
+                                  <i className="fas fa-seedling"></i>
+                                </div>
+                                <div className="crop-name">
+                                  <h4>{crop.organism_name}</h4>
+                                  <span className="crop-scientific">{crop.organism_scientific}</span>
+                                </div>
+                                <span className={`crop-potential-badge ${getGedPotentialBadgeClass(crop.ged_potential)}`}>
+                                  <i className={`fas ${getGedPotentialIcon(crop.ged_potential)}`}></i>
+                                  {crop.ged_potential_display}
+                                </span>
+                              </div>
+                              <div className="crop-details">
+                                <div className="crop-detail-item">
+                                  <span className="detail-label">Trait Improvement:</span>
+                                  <span className="detail-value">{crop.trait_improvement || 'N/A'}</span>
+                                </div>
+                                <div className="crop-detail-item">
+                                  <span className="detail-label">Socio-Economic Importance:</span>
+                                  <span className="detail-value">{crop.socio_economic_importance || 'N/A'}</span>
+                                </div>
+                                {crop.existing_rd && (
+                                  <div className="crop-detail-item">
+                                    <span className="detail-label">Existing R&D:</span>
+                                    <span className="detail-value">{crop.existing_rd_details || crop.existing_rd}</span>
+                                  </div>
+                                )}
+                                {crop.production_gap && (
+                                  <div className="crop-detail-item">
+                                    <span className="detail-label">Production Gap:</span>
+                                    <span className={`detail-value ${crop.has_production_increase ? 'text-success' : 'text-danger'}`}>
+                                      {crop.production_gap_percentage && `${Math.abs(crop.production_gap_percentage).toFixed(1)}%`}
+                                      {crop.has_production_increase ? ' ↑' : ' ↓'}
+                                    </span>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                        <div className="crops-note">
+                          <i className="fas fa-info-circle"></i>
+                          <span>Priority crops identified as having high potential for genome editing technology application.</span>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="crops-empty-state">
+                        <div className="crops-empty-icon">
+                          <i className="fas fa-seedling"></i>
+                        </div>
+                        <h4>No Priority Crops/Livestock Data Available</h4>
+                        <p>Priority crop data for {countryData.name} is currently being compiled. Check back later for updates.</p>
+                        <div className="crops-empty-hint">
+                          <i className="fas fa-lightbulb"></i>
+                          <span>Countries with priority crop data will appear here</span>
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   {/* Regulatory Framework */}
@@ -999,7 +819,7 @@ const CountriesPage = ({ onBackClick }) => {
                   {/* Key Publications */}
                   {countryData.publications && countryData.publications.length > 0 && (
                     <div className="info-card">
-                      <h3><i className="fas fa-file-alt"></i> Key Publications</h3>
+                      <h3><i className="fas fa-file-alt"></i> Key Reports</h3>
                       <div className="publications-list">
                         {countryData.publications.map((pub, idx) => (
                           <div key={idx} className="publication-item">

@@ -41,7 +41,7 @@ const Footer = ({ variant = 'default' }) => {
               </li>
               <li>
                 <button onClick={() => handleNavigation('/about')} className="footer-link">
-                  <i className="fas fa-info-circle"></i> About GENADA
+                  <i className="fas fa-info-circle"></i> About Genome Editing Database for Agricultural Development in Africa
                 </button>
               </li>
               <li>
